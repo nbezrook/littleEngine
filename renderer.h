@@ -23,6 +23,7 @@ typedef struct {
 
 typedef struct {
     ProjectedVertex projected[RENDER_VERTEX_CAPACITY];
+    Vector3 view[RENDER_VERTEX_CAPACITY];
 } RenderScratch;
 
 typedef struct {
@@ -30,8 +31,7 @@ typedef struct {
 
     Vector3 position;
     Vector3 rotation;       // radians
-    Vector3 rotation_rate;  // rad per sec
-
+    
     const CPUTexture *texture;
 
     uint32_t color;
@@ -70,12 +70,14 @@ bool renderer_init(
     /**
      * @brief Clear and rasterize one object, draw its texture preview, and present the image.
      * @param renderer Non-null initialized renderer, used on the main thread.
-     * @param object Non-null object with a valid mesh; a NULL texture selects solid color.
+     * @param objects Objects retrieved from server snapshot.
+     * @param object_count Self-explanatory
      * @param camera Non-null camera used for projection.
      * @note CPU rasterization uses pitch-aware rows and a depth buffer cleared once per frame.
      * There is no triangle near-plane clipping; an unprojectable vertex rejects the mesh.
      */
-    void render_frame(EngineRenderer *renderer, const SceneObject *object, const Camera *camera);
+    void render_frame(EngineRenderer *renderer, const SceneObject *objects, size_t object_count, const Camera *camera);
+
     /**
      * @brief Free depth storage, destroy SDL rendering resources, and call SDL_Quit.
      * @param renderer Non-null initialized or appropriately zero-initialized renderer.

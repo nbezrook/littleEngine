@@ -4,5 +4,6 @@
 #include "math_types.h"
 
 extern WireframeMesh cube_mesh;
+extern WireframeMesh room_mesh;
 
 #endif

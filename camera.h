@@ -83,6 +83,25 @@ void depth_buffer_shutdown(DepthBuffer *buffer);
  */
 void camera_apply_look(Camera *camera, float yaw_delta, float pitch_delta);
 
+/**
+ * @brief Express a world-space point in the camera's coordinate system.
+ * @param camera Non-null camera.
+ * @param world World-space position.
+ * @return Camera-space position, including points behind the near plane.
+ */
+Vector3 camera_world_to_view(const Camera *camera, Vector3 world);
+
+/**
+ * @brief Project a camera-space point into screen coordinates.
+ * @param camera Non-null camera with positive near_clip.
+ * @param view Camera-space position; do not pass a world-space point.
+ * @param width Positive viewport width in pixels.
+ * @param height Positive viewport height in pixels.
+ * @param out Non-null destination, unchanged if projection fails.
+ * @return False when view.z is less than near_clip; true otherwise.
+ */
+bool camera_project_view(const Camera *camera,Vector3 view,int width,int height,ProjectedVertex *out);
+
 #ifdef __cplusplus
 }
 #endif

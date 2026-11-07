@@ -3,11 +3,41 @@
 
 #include "include/SDL3/SDL.h"
 
+enum {
+    DEBUG_CONSOLE_HISTORY_LINES = 128,
+    DEBUG_CONSOLE_LINE_BYTES = 96
+};
+
+typedef struct {
+    char text[DEBUG_CONSOLE_LINE_BYTES];
+    int category;
+    SDL_LogPriority priority;
+} DebugConsoleLine;
+
 typedef struct {
     SDL_Window *window;
     SDL_Renderer *renderer;
-    char last_message[256];
+    SDL_Mutex *log_mutex;
+    DebugConsoleLine lines[DEBUG_CONSOLE_HISTORY_LINES];
+    size_t first_line;
+    size_t line_count;
+    SDL_LogOutputFunction previous_log_output;
+    void *previous_log_userdata;
+    bool log_output_installed;
 } DebugConsole;
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/**
+ * @brief Start SDL log capture before creating any video resources.
+ * @param console Non-null fresh destination with no live resources.
+ * @return False if the history mutex cannot be created; no callback is then installed.
+ * @note Resets the structure, enables all SDL log priorities, and saves the old callback.
+ * Keep console at a stable address until shutdown. Main-thread lifecycle only.
+ */
+bool debug_console_log_init(DebugConsole *console);
 
 /**
  * @brief Create a separate SDL debug window and install the SDL log callback.
@@ -43,5 +73,9 @@ void debug_console_shutdown(DebugConsole *console);
  * It can display an error while the process is alive, not survive a process crash.
  */
 void debug_console_wait_for_close(DebugConsole *console);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

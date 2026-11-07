@@ -9,20 +9,38 @@
  * @param dt Step duration in seconds; currently 1/60. Does not poll events or render.
  */
 static void engine_tick (Engine *engine, double dt) {
-    ++engine->tic_number;
     InputMovement movement = input_get_movement(&engine->input);
     camera_move(&engine->camera,movement.forward,movement.right,3.0f,dt);
-    scene_object_tick(&engine->object, dt);
+    server_tick(&engine->server, dt);
 }
 
 bool engine_init(Engine *engine, int width, int height) {
     *engine = (Engine){0};
+
+    if (!debug_console_log_init(&engine->console)) {
+        SDL_Log("Log capture initialization failed: %s", SDL_GetError());
+        return false;
+    }
+
+    SDL_Log("Starting littleEngine...");
 
     engine->camera = (Camera){
     .position = {0.0f, 0.0f, -4.0f},
     .focal_length_pixels = 400.0f,
     .near_clip = 0.1f};
 
+    if (!server_add_entity(&engine->server, (Entity){
+            .position = {-1.5f, 0.0f, 0.0f},
+            .rotation_rate = {0.5f, 1.0f, 0.0f}
+        }) ||
+        !server_add_entity(&engine->server, (Entity){
+            .position = {1.5f, 0.0f, 1.0f},
+            .rotation_rate = {0.0f, -0.7f, 0.3f}
+        })) {
+        debug_console_shutdown(&engine->console);
+        return false;
+    }
+    
     if (!renderer_init(
             &engine->renderer, "my littleEngine", width, height)) {
         SDL_Log("Engine initialization failed: %s", SDL_GetError());
@@ -45,6 +63,7 @@ bool engine_init(Engine *engine, int width, int height) {
         return false;
     }
 
+    texture_make_checker(checker);
     CPUTexture *image = texture_book_load_png(&engine->textures, "IndexOfMiracles/tex/FACE.png");
 
     if (!image) {
@@ -52,13 +71,7 @@ bool engine_init(Engine *engine, int width, int height) {
     }
 
     // little unit cube object 
-    engine->object = (SceneObject) {
-        .mesh = &cube_mesh,
-        .texture = image,
-        .rotation_rate = {.x = 0.5f, .y = 1.0f},
-        .color = 0x0000FF00
-    };
-
+    client_init(&engine->client, &cube_mesh, image);
     // REPLACE WITH SCENE SPACE
 
 
@@ -77,7 +90,7 @@ bool engine_init(Engine *engine, int width, int height) {
     }
 
 
-
+    SDL_Log("littleEngine initialized.");
     return true;
 }
 bool engine_frame(Engine *engine) {
@@ -100,6 +113,10 @@ bool engine_frame(Engine *engine) {
         input_event(&engine->input, &event);
     } 
 
+    InputLook look = input_take_look(&engine->input);
+
+    camera_apply_look(&engine->camera, look.yaw, look.pitch);
+
     // TIC CODE
 
     Uint64 now = SDL_GetPerformanceCounter();
@@ -117,7 +134,19 @@ bool engine_frame(Engine *engine) {
         engine->accumulator -= tic_duration;
     }
 
-    render_frame(&engine->renderer, &engine->object, &engine->camera);
+    ServerSnapshot snapshot;
+
+    if (!server_build_snapshot(&engine->server, &snapshot) || !client_receive_snapshot(&engine->client, &snapshot)) {
+        SDL_Log("Server snapshot exchange failed.");
+        return false;
+    }
+
+    render_frame(
+        &engine->renderer,
+        engine->client.objects,
+        engine->client.object_count,
+        &engine->camera
+    );
 
     if (!(SDL_GetWindowFlags(engine->console.window)
     & SDL_WINDOW_HIDDEN)) {

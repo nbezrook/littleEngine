@@ -3,9 +3,10 @@
 
 #include "renderer.h"
 #include "console.h"
-#include "entities.h"
+#include "server.h"
 #include "camera.h"
 #include "inputThinker.h"
+#include "client.h"
 
 typedef struct {
     EngineRenderer renderer;
@@ -16,11 +17,10 @@ typedef struct {
     InputThinker input;
 
     Uint64 previous_time;
-    Uint64 tic_number;
     double accumulator;
 
-    SceneObject object;
-
+    Server server;
+    Client client;
     TextureBook textures;
 } Engine;
 

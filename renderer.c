@@ -3,6 +3,7 @@
 #include "math/math_types.h"
 #include "math/primitives.h"
 #include "camera.h"
+#include "clipping.h"
 
 bool texture_init(CPUTexture *texture, int width, int height){
     if (width <= 0 || height <= 0) return false;
@@ -329,6 +330,7 @@ bool draw_wireframe_mesh(uint32_t *pixels, int screen_width, int screen_height,
  * @return False for excessive/negative vertex count or any rejected vertex; true otherwise.
  * @note No backface culling or near-plane triangle clipping is performed.
  */
+
 bool draw_mesh(uint32_t *pixels, int screen_width, int screen_height, 
     int pitch, WireframeMesh mesh, Vector3 rotation, uint32_t color,
     Vector3 position, const Camera *camera, RenderScratch *scratch, DepthBuffer *depth,  const CPUTexture *texture) {
@@ -340,7 +342,7 @@ bool draw_mesh(uint32_t *pixels, int screen_width, int screen_height,
     }
 
     // check edge points
-    ProjectedVertex *points = scratch->projected;
+    Vector3 *points = scratch->view;
 
     // project vertices to 2d plane
     for (int i = 0; i < mesh.vertex_count; ++i) {
@@ -356,31 +358,41 @@ bool draw_mesh(uint32_t *pixels, int screen_width, int screen_height,
             v.z + position.z
         };
 
-        if (!camera_project(
-            camera,
-            world,
-            screen_width,
-            screen_height,
-            &points[i])) {
-                return false;
-            }
-        }
+        points[i] = camera_world_to_view(camera, world);
+    }
+
         // fill triangle in mesh
         for (int i = 0; i < mesh.triangle_count; ++i) {
             Triangle triangle = mesh.triangles[i];
-            fill_triangle(
-                pixels,
-                depth,
-                screen_width,
-                screen_height,
-                pitch,
-                make_raster_vertex(points[triangle.a], triangle.uv_a),
-                make_raster_vertex(points[triangle.b], triangle.uv_b),
-                make_raster_vertex(points[triangle.c], triangle.uv_c),
-                color,
-                texture
-            );
+
+            ClipVertex input[3] = {{points[triangle.a], triangle.uv_a},{points[triangle.b], triangle.uv_b},{points[triangle.c], triangle.uv_c}};
+            ClipVertex clipped[4];
+
+            int count = clip_triangle_near(input, camera->near_clip, clipped);
+
+            if (count < 3) continue;
+
+            RasterVertex vertices[4];
+            bool valid = true;
+
+            for (int j = 0; j < count; ++j) {
+                ProjectedVertex projected;
+
+                if (!camera_project_view(camera, clipped[j].position, screen_width, screen_height, &projected)) {
+                    valid = false;
+                    break;
+                }
+
+                vertices[j] = make_raster_vertex(projected, clipped[j].uv);
+            }
+
+            if (!valid) continue;
+
+            for (int j = 1; j < count - 1; ++j) {
+                fill_triangle(pixels,depth,screen_width,screen_height,pitch,vertices[0],vertices[j], vertices[j + 1],color, texture);
+            }
         }
+
     return true;
 }
 
@@ -413,7 +425,7 @@ bool renderer_init(EngineRenderer* renderer, const char* title, int width, int h
         renderer_shutdown(renderer);
         return false;
     }
-
+    SDL_Log("littleEngine renderer initalized: %d by %d", width, height);
     return true;
 }
 
@@ -425,7 +437,7 @@ void renderer_shutdown(EngineRenderer* renderer) {
     SDL_Quit();
 }
 
-void render_frame(EngineRenderer* renderer, const SceneObject *object, const Camera *camera) {
+    void render_frame(EngineRenderer *renderer, const SceneObject *objects, size_t object_count, const Camera *camera) {
     uint32_t* pixels;
     int pitch;
 
@@ -438,43 +450,26 @@ void render_frame(EngineRenderer* renderer, const SceneObject *object, const Cam
             }
         // clear depth buffer
         depth_buffer_clear(&renderer->depth);
+        for (size_t i = 0; i < object_count; ++i) {
+            const SceneObject *object = &objects[i];
 
-        draw_mesh(
-            pixels,
-            renderer->width,
-            renderer->height,
-            pitch,
-            *object->mesh,
-            object->rotation,
-            object->color,
-            object->position,
-            camera,
-            &renderer->scratch,
-            &renderer->depth,
-            object->texture
-        );
-const CPUTexture *preview = object->texture;
-
-if (preview) {
-    for (int y = 0;
-         y < preview->height && y + 10 < renderer->height;
-         ++y) {
-
-        uint32_t *row = (uint32_t *)(
-            (uint8_t *)pixels + (size_t)(y + 10) * pitch
-        );
-
-        for (int x = 0;
-             x < preview->width && x + 10 < renderer->width;
-             ++x) {
-
-            float u = (x + 0.5f) / preview->width;
-            float v = (y + 0.5f) / preview->height;
-
-            row[x + 10] = texture_sample(preview, u, v);
+            draw_mesh(
+                pixels,
+                renderer->width,
+                renderer->height,
+                pitch,
+                *object->mesh,
+                object->rotation,
+                object->color,
+                object->position,
+                camera,
+                &renderer->scratch,
+                &renderer->depth,
+                object->texture
+            );
         }
-    }
-}
+
+        
         SDL_UnlockTexture(renderer->screen_texture);
     }
 

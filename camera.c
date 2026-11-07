@@ -6,6 +6,11 @@
 
 bool camera_project(const Camera *camera, Vector3 world, int width, int height, ProjectedVertex *out)
 {
+    Vector3 view = camera_world_to_view(camera, world);
+    return camera_project_view(camera, view, width, height, out);
+}
+
+Vector3 camera_world_to_view(const Camera *camera, Vector3 world) {
     Vector3 delta = {world.x - camera->position.x, world.y - camera->position.y, world.z - camera->position.z};
 
     float sy = sinf(camera->yaw);
@@ -15,9 +20,12 @@ bool camera_project(const Camera *camera, Vector3 world, int width, int height, 
 
     float x = cy * delta.x - sy * delta.z;
     float z = sy * delta.x + cy * delta.z;
-
-
+    
     Vector3 view = {x, cp * delta.y - sp * z, sp * delta.y + cp * z};
+    return view;
+}
+
+bool camera_project_view(const Camera *camera, Vector3 view, int width, int height, ProjectedVertex *out){
     // setting up camera projection for depth testing
     if (view.z < camera->near_clip)
         return false;

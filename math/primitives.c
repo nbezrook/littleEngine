@@ -66,4 +66,39 @@ WireframeMesh cube_mesh = {
     .triangle_count = sizeof(cube_triangles) / sizeof(cube_triangles[0])
 };
 
+static Vector3 room_vertices[] = {
+    {-6, -2, -8}, {6, -2, -8}, {6, 3, -8}, {-6, 3, -8},
+    {-6, -2,  8}, {6, -2,  8}, {6, 3,  8}, {-6, 3,  8}
+};
+
+static Triangle room_triangles[] = {
+    /* Z-negative wall. */
+    {0,1,2, {0,1},{1,1},{1,0}},
+    {0,2,3, {0,1},{1,0},{0,0}},
+    /* Z-positive wall. */
+    {4,6,5, {0,1},{1,0},{1,1}},
+    {4,7,6, {0,1},{0,0},{1,0}},
+    /* X-negative wall. */
+    {0,7,4, {0,1},{1,0},{1,1}},
+    {0,3,7, {0,1},{0,0},{1,0}},
+    /* X-positive wall. */
+    {1,6,2, {0,1},{1,0},{0,0}},
+    {1,5,6, {0,1},{1,1},{1,0}},
+    /* Floor. */
+    {0,5,1, {0,1},{1,0},{1,1}},
+    {0,4,5, {0,1},{0,0},{1,0}},
+    /* Ceiling. */
+    {3,6,7, {0,1},{1,0},{0,0}},
+    {3,2,6, {0,1},{1,1},{1,0}}
+};
+
+WireframeMesh room_mesh = {
+    .vertices = room_vertices,
+    .vertex_count = 8,
+    .edges = cube_edges,
+    .edge_count = 12,
+    .triangles = room_triangles,
+    .triangle_count = sizeof(room_triangles) / sizeof(room_triangles[0])
+};
+
 #endif

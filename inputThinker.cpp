@@ -1,5 +1,20 @@
 #include "inputThinker.h"
 
+/**
+ * @brief Enable or release relative mouse mode on the main thread.
+ * @param input Initialized input borrowing a live game window.
+ * @param capture True to capture; false to release.
+ */
+static void input_set_capture(InputThinker *input, bool capture)
+{
+    if (!SDL_SetWindowRelativeMouseMode(input->window, capture)) {
+        SDL_Log("Mouse capture failed: %s", SDL_GetError());
+        return;
+    }
+    input->pending_yaw = 0.0f;
+    input->pending_pitch = 0.0f;
+}
+
 bool input_init(InputThinker *input, SDL_Window *window) {
     if (!input || !window) return false;
 
@@ -17,14 +32,38 @@ void input_event(InputThinker *input, const SDL_Event *event){
 
     // remove control when window focus is lost
     if (event->type == SDL_EVENT_WINDOW_FOCUS_LOST) {
-    input->forward_down = false;
-    input->backward_down = false;
-    input->left_down = false;
-    input->right_down = false;
-    input->pending_yaw = 0.0f;
-    input->pending_pitch = 0.0f;
-    return;
+        input_set_capture(input, false);
+
+        input->forward_down = false;
+        input->backward_down = false;
+        input->left_down = false;
+        input->right_down = false;
+        input->pending_yaw = 0.0f;
+        input->pending_pitch = 0.0f;
+        return;
     }
+
+    /* Click the game window to capture the mouse. */
+    if (event->type == SDL_EVENT_MOUSE_BUTTON_DOWN && event->button.button == SDL_BUTTON_LEFT) {
+        input_set_capture(input, true);
+        return;
+    }
+
+    /* Escape releases the cursor for the console and desktop. */
+    if (event->type == SDL_EVENT_KEY_DOWN && event->key.scancode == SDL_SCANCODE_ESCAPE && !event->key.repeat) {
+        input_set_capture(input, false);
+        return;
+    }
+
+    /* Accumulate angular displacement while captured. */
+    if (event->type == SDL_EVENT_MOUSE_MOTION) {
+        if (SDL_GetWindowRelativeMouseMode(input->window)) {
+            input->pending_yaw += event->motion.xrel * input->mouse_sensitivity;
+            input->pending_pitch -= event->motion.yrel * input->mouse_sensitivity;
+        }
+        return;
+    }
+
 
     if (event->type != SDL_EVENT_KEY_DOWN && event->type != SDL_EVENT_KEY_UP) return;
 
@@ -55,7 +94,9 @@ InputLook input_take_look(InputThinker *input) {
     return look;
 }
 
-void input_shutdown(InputThinker *input){
-    if (input)
-        *input = InputThinker{};
+void input_shutdown(InputThinker *input)
+{
+    if (!input) return;
+    if (input->window) input_set_capture(input, false);
+    *input = InputThinker{};
 }
