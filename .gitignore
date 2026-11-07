@@ -1,0 +1,18 @@
+# Compiled output
+*.o
+*.obj
+*.exe
+*.pdb
+*.ilk
+
+# Build directories
+/build/
+/cmake-build-*/
+
+# Runtime output
+*.log
+*.dmp
+
+# Local secrets
+.env
+.env.*
