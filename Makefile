@@ -8,7 +8,7 @@ CXXFLAGS = -Wall -Wextra -std=c++17 -O2 -I./include
 
 all:
 	$(CC) $(CFLAGS) -c engine.c renderer.c console.c entities.c math/primitives.c camera.c
-	$(CXX) $(CXXFLAGS) -c main.cpp assetsThinker.cpp
-	$(CXX) main.o engine.o renderer.o console.o entities.o primitives.o camera.o assetsThinker.o SDL3.dll -o engine.exe -mwindows
+	$(CXX) $(CXXFLAGS) -c main.cpp assetsThinker.cpp inputThinker.cpp
+	$(CXX) main.o engine.o renderer.o console.o entities.o primitives.o camera.o assetsThinker.o inputThinker.o SDL3.dll -o engine.exe -mwindows
 clean:
-	del main.o engine.o renderer.o console.o entities.o primitives.o camera.o assetsThinker.o engine.exe
+	del main.o engine.o renderer.o console.o entities.o primitives.o camera.o assetsThinker.o inputThinker.o engine.exe

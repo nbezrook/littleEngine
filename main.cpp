@@ -9,6 +9,11 @@
 #define SCREEN_WIDTH 1280
 #define SCREEN_HEIGHT 960
 
+/**
+ * @brief Create the application owner, initialize the engine, and run until shutdown.
+ * @return 0 after normal exit; 1 if initialization fails.
+ * @note Application destruction releases resources after successful initialization.
+ */
 int main() {
     Application littleEngineApp;
 

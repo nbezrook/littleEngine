@@ -3,8 +3,15 @@
 #include "math/primitives.h"
 #include "assetsThinker.h"
 
+/**
+ * @brief Advance one fixed simulation step: sample movement, move the camera, and rotate the object.
+ * @param engine Non-null initialized engine.
+ * @param dt Step duration in seconds; currently 1/60. Does not poll events or render.
+ */
 static void engine_tick (Engine *engine, double dt) {
     ++engine->tic_number;
+    InputMovement movement = input_get_movement(&engine->input);
+    camera_move(&engine->camera,movement.forward,movement.right,3.0f,dt);
     scene_object_tick(&engine->object, dt);
 }
 
@@ -58,6 +65,19 @@ bool engine_init(Engine *engine, int width, int height) {
     // tic init
     engine->previous_time = SDL_GetPerformanceCounter();
 
+
+
+
+
+    // input int
+
+    if (!input_init(&engine->input, engine->renderer.window)) {
+    engine_shutdown(engine);
+    return false;
+    }
+
+
+
     return true;
 }
 bool engine_frame(Engine *engine) {
@@ -73,13 +93,12 @@ bool engine_frame(Engine *engine) {
             continue; // Event handled by console
         }
 
-    if (event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED &&
-        SDL_GetWindowFromEvent(&event) == engine->renderer.window)
-        return false;
+        if (event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED && SDL_GetWindowFromEvent(&event) == engine->renderer.window) {
+            return false;
+        }
 
-        // INPUT HERE
-
-    }
+        input_event(&engine->input, &event);
+    } 
 
     // TIC CODE
 
@@ -109,6 +128,7 @@ bool engine_frame(Engine *engine) {
 }
 
 void engine_shutdown(Engine *engine) {
+    input_shutdown(&engine->input);
     texture_book_shutdown(&engine->textures);
     debug_console_shutdown(&engine->console);
     renderer_shutdown(&engine->renderer);

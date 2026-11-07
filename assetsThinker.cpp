@@ -29,6 +29,9 @@ CPUTexture *texture_book_load_png(TextureBook *book, const char *path)
 
     struct UnlockSurface {
         SDL_Surface *surface;
+        /**
+         * @brief Unlock the borrowed converted surface before its owning smart pointer destroys it.
+         */
         ~UnlockSurface() {
             SDL_UnlockSurface(surface);
         }

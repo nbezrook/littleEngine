@@ -84,6 +84,19 @@ uint32_t texture_sample(const CPUTexture *texture, float u, float v)
     return texture->pixels[index];
 }
 
+/**
+ * @brief Draw a solid integer line, skipping samples outside the framebuffer.
+ * @param pixels Non-null tightly packed 32-bit framebuffer.
+ * @param screen_width Positive row width in pixels; also used as the pixel stride.
+ * @param screen_height Positive row count.
+ * @param x1 Start X in pixels.
+ * @param y1 Start Y in pixels.
+ * @param x2 End X in pixels.
+ * @param y2 End Y in pixels.
+ * @param color Packed pixel color.
+ * @note Legacy wireframe path: no depth test or padded-row pitch support.
+ * Coordinate differences and intermediate integer arithmetic must not overflow.
+ */
 void draw_line(uint32_t* pixels, int screen_width, int screen_height, int x1, int y1, int x2, int y2, uint32_t color) {
     int dx = cAbs(x2 - x1);
     int dy = cAbs(y2 - y1);
@@ -122,12 +135,33 @@ typedef struct {
     float v_over_depth;
 } RasterVertex;
 
+/**
+ * @brief Prepare attributes that interpolate linearly after perspective projection.
+ * @param p Projected position with positive reciprocal camera depth.
+ * @param uv Texture coordinates attached to this triangle corner.
+ * @return Screen position, 1/Z, u/Z, and v/Z for rasterization.
+ */
 static RasterVertex make_raster_vertex(ProjectedVertex p, Point2 uv)
 {
     return (RasterVertex){.screen = p.screen,.inverse_depth = p.inverse_depth,.u_over_depth = uv.x * p.inverse_depth,
         .v_over_depth = uv.y * p.inverse_depth};
 }
 
+/**
+ * @brief Rasterize an opaque triangle with top-left coverage and reciprocal-depth testing.
+ * @param pixels Writable 32-bit framebuffer, with rows separated by pitch bytes.
+ * @param depth Initialized depth buffer with the same width/height; clear before the frame.
+ * @param width Positive viewport width in pixels.
+ * @param height Positive viewport height in pixels.
+ * @param pitch Row stride in bytes, at least width * sizeof(uint32_t).
+ * @param a Finite projected vertex with positive reciprocal depth.
+ * @param b Finite projected vertex with positive reciprocal depth.
+ * @param c Finite projected vertex with positive reciprocal depth.
+ * @param color Solid fallback color if texture is NULL.
+ * @param texture Valid initialized texture, or NULL for solid fill.
+ * @note Either winding is accepted; zero-area triangles are skipped. Larger 1/Z wins.
+ * UVs are recovered from interpolated u/Z and v/Z; no allocation or geometric clipping occurs.
+ */
 static void fill_triangle(
     uint32_t *pixels,
     DepthBuffer *depth,
@@ -208,6 +242,20 @@ static void fill_triangle(
 }
 
 
+/**
+ * @brief Transform/project vertices into reusable scratch and draw mesh edges.
+ * @param pixels Writable tightly packed framebuffer; this legacy path ignores padded pitch.
+ * @param screen_width Positive framebuffer width in pixels.
+ * @param screen_height Positive framebuffer height in pixels.
+ * @param mesh Valid vertex/edge arrays and in-range indices.
+ * @param rotation Euler angles in radians, applied Y then X then Z.
+ * @param color Packed line color.
+ * @param position World-space object translation.
+ * @param camera Non-null camera.
+ * @param scratch Non-null caller-owned workspace; must not be shared by concurrent calls.
+ * @return False for excessive/negative vertex count or any vertex failing projection; true otherwise.
+ * @note No depth testing or triangle clipping. A rejected vertex rejects the whole mesh.
+ */
 bool draw_wireframe_mesh(uint32_t *pixels, int screen_width, int screen_height, 
     WireframeMesh mesh, Vector3 rotation, uint32_t color,
     Vector3 position,const Camera *camera,RenderScratch *scratch) {
@@ -264,6 +312,23 @@ bool draw_wireframe_mesh(uint32_t *pixels, int screen_width, int screen_height,
     return true;
 }
 
+/**
+ * @brief Transform/project a mesh once and rasterize its textured or solid triangles.
+ * @param pixels Writable 32-bit framebuffer.
+ * @param screen_width Positive framebuffer width in pixels.
+ * @param screen_height Positive framebuffer height in pixels.
+ * @param pitch Framebuffer row stride in bytes.
+ * @param mesh Valid vertex/triangle arrays and in-range indices.
+ * @param rotation Euler angles in radians, applied Y then X then Z.
+ * @param color Solid fallback color when texture is NULL.
+ * @param position World-space object translation.
+ * @param camera Non-null camera.
+ * @param scratch Non-null exclusive workspace; no per-mesh allocation occurs.
+ * @param depth Matching initialized depth buffer, cleared once before all frame objects.
+ * @param texture Initialized texture, or NULL for solid color.
+ * @return False for excessive/negative vertex count or any rejected vertex; true otherwise.
+ * @note No backface culling or near-plane triangle clipping is performed.
+ */
 bool draw_mesh(uint32_t *pixels, int screen_width, int screen_height, 
     int pitch, WireframeMesh mesh, Vector3 rotation, uint32_t color,
     Vector3 position, const Camera *camera, RenderScratch *scratch, DepthBuffer *depth,  const CPUTexture *texture) {

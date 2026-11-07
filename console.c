@@ -1,6 +1,15 @@
 #include "console.h"
 #include <stdio.h>
 
+/**
+ * @brief SDL log callback: copy the latest message into the console's fixed-size text buffer.
+ * @param userdata Borrowed DebugConsole pointer supplied when the callback was installed.
+ * @param category SDL log category; currently ignored.
+ * @param priority SDL log priority; currently ignored.
+ * @param message Null-terminated message; long messages are truncated to fit.
+ * @note Does not draw or allocate. Writes are not synchronized with console rendering;
+ * thread-safe log storage is required before adding worker-thread logging.
+ */
 static void SDLCALL console_log_output(
     void *userdata,
     int category,
