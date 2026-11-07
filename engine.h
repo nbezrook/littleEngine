@@ -17,6 +17,8 @@ typedef struct {
     double accumulator;
 
     SceneObject object;
+
+    TextureBook textures;
 } Engine;
 
 #ifdef __cplusplus

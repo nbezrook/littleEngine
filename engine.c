@@ -1,6 +1,7 @@
 #include "engine.h"
 #include "entities.h"
 #include "math/primitives.h"
+#include "assetsThinker.h"
 
 static void engine_tick (Engine *engine, double dt) {
     ++engine->tic_number;
@@ -27,17 +28,35 @@ bool engine_init(Engine *engine, int width, int height) {
         return false;
     }
 
-    // tic init
-    engine->previous_time = SDL_GetPerformanceCounter();
+    // texture init
+
+    CPUTexture *checker = texture_book_create(&engine->textures, 64, 64);
+
+    if (!checker) {
+        SDL_Log("Checkerboard texture initialization failed.");
+        engine_shutdown(engine);
+        return false;
+    }
+
+    CPUTexture *image = texture_book_load_png(&engine->textures, "IndexOfMiracles/tex/FACE.png");
+
+    if (!image) {
+        image = checker;
+    }
 
     // little unit cube object 
     engine->object = (SceneObject) {
         .mesh = &cube_mesh,
+        .texture = image,
         .rotation_rate = {.x = 0.5f, .y = 1.0f},
         .color = 0x0000FF00
     };
 
     // REPLACE WITH SCENE SPACE
+
+
+    // tic init
+    engine->previous_time = SDL_GetPerformanceCounter();
 
     return true;
 }
@@ -90,6 +109,7 @@ bool engine_frame(Engine *engine) {
 }
 
 void engine_shutdown(Engine *engine) {
+    texture_book_shutdown(&engine->textures);
     debug_console_shutdown(&engine->console);
     renderer_shutdown(&engine->renderer);
 }

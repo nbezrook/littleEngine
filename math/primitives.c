@@ -30,14 +30,29 @@ Edge cube_edges[] = {
 
 // PRIMITIVE TRIANGLE FACES FOR UNIT CUBE
 static Triangle cube_triangles[] = {
-    {0, 2, 1}, {0, 3, 2}, // Z-negative face
-    {4, 5, 6}, {4, 6, 7}, // Z-positive face
+    // Z-negative
+    {0,2,1, {0,1},{1,0},{1,1}},
+    {0,3,2, {0,1},{0,0},{1,0}},
 
-    {0, 4, 7}, {0, 7, 3}, // X-negative face
-    {1, 2, 6}, {1, 6, 5}, // X-positive face
+    // Z-positive
+    {4,5,6, {0,1},{1,1},{1,0}},
+    {4,6,7, {0,1},{1,0},{0,0}},
 
-    {0, 1, 5}, {0, 5, 4}, // Y-negative face
-    {3, 7, 6}, {3, 6, 2}  // Y-positive face
+    // X-negative
+    {0,4,7, {0,1},{1,1},{1,0}},
+    {0,7,3, {0,1},{1,0},{0,0}},
+
+    // X-positive
+    {1,2,6, {0,1},{0,0},{1,0}},
+    {1,6,5, {0,1},{1,0},{1,1}},
+
+    // Y-negative
+    {0,1,5, {0,1},{1,1},{1,0}},
+    {0,5,4, {0,1},{1,0},{0,0}},
+
+    // Y-positive
+    {3,7,6, {0,1},{0,0},{1,0}},
+    {3,6,2, {0,1},{1,0},{1,1}}
 };
 
 WireframeMesh cube_mesh = {

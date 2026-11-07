@@ -2,6 +2,7 @@
 #define ENTITIES_C
 #include "entities.h"
 #include "math/primitives.h"
+#include "assetsThinker.h"
 
 SceneObject object = {};
 

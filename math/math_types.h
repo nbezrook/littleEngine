@@ -22,6 +22,10 @@ typedef struct {
     int a;
     int b;
     int c;
+
+    Point2 uv_a;
+    Point2 uv_b;
+    Point2 uv_c;
 } Triangle;
 
 typedef struct {
@@ -32,16 +36,6 @@ typedef struct {
     Triangle *triangles;
     int triangle_count;
 } WireframeMesh;
-
-typedef struct {
-    const WireframeMesh *mesh;
-
-    Vector3 position;
-    Vector3 rotation;       // radians
-    Vector3 rotation_rate;  // rad per sec
-
-    uint32_t color;
-} SceneObject;
 
 typedef struct {
     Point2 screen;

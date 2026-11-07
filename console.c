@@ -68,3 +68,24 @@ bool debug_console_event(
 
     return true;
 }
+
+void debug_console_wait_for_close(DebugConsole *console) {
+    bool waiting = true;
+    SDL_Event event;
+
+    while (waiting) {
+        while (SDL_PollEvent(&event)) {
+            if (event.type == SDL_EVENT_QUIT) {
+                waiting = false;
+            }
+            if (event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED &&
+                SDL_GetWindowFromEvent(&event) == console->window) {
+                waiting = false;
+            }
+        }
+        if (!waiting) break;
+
+        debug_console_draw(console);
+        SDL_Delay(16);
+    }
+}
