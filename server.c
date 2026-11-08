@@ -1,4 +1,6 @@
 #include "server.h"
+#include "map.h"
+
 
 bool server_add_entity(Server *server, Entity entity)
 {
@@ -34,5 +36,19 @@ bool server_build_snapshot(const Server *server, ServerSnapshot *out)
     }
 
     *out = snapshot;
+    return true;
+}
+
+bool server_load_test_map(Server *server)
+{
+    return map_make_test_room(&server->world.map);
+}
+
+bool server_copy_map(const Server *server, MapData *out)
+{
+    if (!map_validate(&server->world.map))
+        return false;
+
+    *out = server->world.map;
     return true;
 }

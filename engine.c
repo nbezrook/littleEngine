@@ -2,6 +2,27 @@
 #include "entities.h"
 #include "math/primitives.h"
 #include "assetsThinker.h"
+#include <stdio.h>
+#include <string.h>
+
+bool engine_asset_path(const Engine *engine, const char *relative_path,
+                       char *out, size_t capacity)
+{
+    if (!out || capacity == 0) return false;
+    out[0] = '\0';
+    if (!engine || !relative_path || !relative_path[0]) return false;
+    size_t length = strlen(engine->game_directory);
+    if (length == 0) return false;
+    char last = engine->game_directory[length - 1];
+    const char *separator = (last == '/' || last == '\\') ? "" : "/";
+    int written = snprintf(out, capacity, "%s%s%s", engine->game_directory,
+                           separator, relative_path);
+    if (written < 0 || (size_t)written >= capacity) {
+        out[0] = '\0';
+        return false;
+    }
+    return true;
+}
 
 /**
  * @brief Advance one fixed simulation step: sample movement, move the camera, and rotate the object.
@@ -14,8 +35,15 @@ static void engine_tick (Engine *engine, double dt) {
     server_tick(&engine->server, dt);
 }
 
-bool engine_init(Engine *engine, int width, int height) {
+bool engine_init(Engine *engine, int width, int height, const char *game_directory) {
     *engine = (Engine){0};
+
+    if (!game_directory || !game_directory[0] ||
+        strlen(game_directory) >= sizeof(engine->game_directory)) {
+        SDL_Log("Invalid or oversized game directory.");
+        return false;
+    }
+    memcpy(engine->game_directory, game_directory, strlen(game_directory) + 1);
 
     if (!debug_console_log_init(&engine->console)) {
         SDL_Log("Log capture initialization failed: %s", SDL_GetError());
@@ -23,11 +51,18 @@ bool engine_init(Engine *engine, int width, int height) {
     }
 
     SDL_Log("Starting littleEngine...");
+    SDL_Log("Game directory: %s", engine->game_directory);
 
     engine->camera = (Camera){
     .position = {0.0f, 0.0f, -4.0f},
     .focal_length_pixels = 400.0f,
     .near_clip = 0.1f};
+
+    if (!server_load_test_map(&engine->server)) {
+        SDL_Log("Test map creation failed.");
+        debug_console_shutdown(&engine->console);
+        return false;
+    }
 
     if (!server_add_entity(&engine->server, (Entity){
             .position = {-1.5f, 0.0f, 0.0f},
@@ -64,7 +99,34 @@ bool engine_init(Engine *engine, int width, int height) {
     }
 
     texture_make_checker(checker);
-    CPUTexture *image = texture_book_load_png(&engine->textures, "IndexOfMiracles/tex/FACE.png");
+
+    engine->textures.fallback = checker;
+    char catalog_path[ENGINE_PATH_CAPACITY];
+
+
+
+    if (!engine_asset_path(engine, "textures.json",catalog_path, sizeof catalog_path) || !texture_book_read_catalog(&engine->textures, catalog_path)) {
+        SDL_Log("Texture catalog initialization failed.");
+        engine_shutdown(engine);
+        return false;
+    }
+
+    if (!checker) {
+        SDL_Log("Checkerboard texture initialization failed.");
+        engine_shutdown(engine);
+        return false;
+    }
+
+    texture_make_checker(checker);
+    char texture_path[ENGINE_PATH_CAPACITY];
+
+    if (!engine_asset_path(engine, "tex/FACE.png", texture_path, sizeof texture_path)) {
+        SDL_Log("Game asset path is too long.");
+        engine_shutdown(engine);
+        return false;
+    }
+
+    const CPUTexture *image = texture_book_resolve(&engine->textures, "face");
 
     if (!image) {
         image = checker;
@@ -79,8 +141,13 @@ bool engine_init(Engine *engine, int width, int height) {
     engine->previous_time = SDL_GetPerformanceCounter();
 
 
+    MapData map;
 
-
+    if (!server_copy_map(&engine->server, &map) || !client_receive_map(&engine->client,&map,&engine->textures)) {
+        SDL_Log("Map transfer to Client failed.");
+        engine_shutdown(engine);
+        return false;
+    }
 
     // input int
 

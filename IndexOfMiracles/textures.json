@@ -1,0 +1,12 @@
+{
+  "textures": [
+    {
+      "name": "stone_wall",
+      "filename": "tex/STONE.png"
+    },
+    {
+      "name": "face",
+      "filename": "tex/FACE.png"
+    }
+  ]
+}

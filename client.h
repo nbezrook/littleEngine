@@ -3,12 +3,20 @@
 
 #include "game_protocol.h"
 #include "renderer.h"
+#include "math/map_types.h"
+
 
 
 typedef struct {
-    SceneObject objects[SNAPSHOT_ENTITY_CAPACITY];
     size_t object_count;
     uint64_t server_tick_number;
+
+    MapData map;
+    WireframeMesh map_meshes[MAP_SURFACE_CAPACITY];
+
+    SceneObject objects[MAP_SURFACE_CAPACITY + SNAPSHOT_ENTITY_CAPACITY];
+
+size_t map_object_count;
 
     const WireframeMesh *demo_mesh;
     const CPUTexture *demo_texture;
@@ -34,6 +42,15 @@ void client_init(Client *client, const WireframeMesh *mesh, const CPUTexture *te
  * @return False for excessive entity count, leaving Client state unchanged.
  */
 bool client_receive_snapshot(Client *client, const ServerSnapshot *snapshot);
+
+/**
+ * @brief Some pattern as for snapshot; replace map state from Server to convert the received map into render objects.
+ * @param client Non-null initialized client.
+ * @param map Non-null and initialized map.
+ * @param textures TextureBook from which to retrieve and resolve textures
+ * @return False for inability to receive map from Server
+ */
+bool client_receive_map(Client *client, const MapData *map, TextureBook *textures);
 
 #ifdef __cplusplus
 }

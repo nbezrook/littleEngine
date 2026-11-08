@@ -66,6 +66,7 @@ WireframeMesh cube_mesh = {
     .triangle_count = sizeof(cube_triangles) / sizeof(cube_triangles[0])
 };
 
+// ROOM VERTICES TO CONNECT WITH TRIANGLES
 static Vector3 room_vertices[] = {
     {-6, -2, -8}, {6, -2, -8}, {6, 3, -8}, {-6, 3, -8},
     {-6, -2,  8}, {6, -2,  8}, {6, 3,  8}, {-6, 3,  8}

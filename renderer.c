@@ -65,6 +65,7 @@ void texture_book_shutdown(TextureBook *book) {
         --book->count;
         texture_shutdown(&book->textures[book->count]);
     }
+    *book = (TextureBook){0};
 }
 
 uint32_t texture_sample(const CPUTexture *texture, float u, float v)
@@ -469,7 +470,7 @@ void renderer_shutdown(EngineRenderer* renderer) {
             );
         }
 
-        
+
         SDL_UnlockTexture(renderer->screen_texture);
     }
 

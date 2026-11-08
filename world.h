@@ -5,9 +5,12 @@
 #include <stddef.h>
 #include "entities.h"
 
+#include "math/map_types.h"
+
 enum { WORLD_ENTITY_CAPACITY = 128 };
 
 typedef struct {
+    MapData map;
     Entity entities[WORLD_ENTITY_CAPACITY];
     size_t entity_count;
 } World;

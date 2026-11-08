@@ -16,9 +16,32 @@ typedef struct {
     int height;
 } CPUTexture;
 
+enum {
+    TEXTURE_NAME_BYTES = 64,
+    TEXTURE_PATH_BYTES = 512
+};
+
+typedef enum {
+    TEXTURE_UNLOADED,
+    TEXTURE_READY,
+    TEXTURE_FAILED
+} TextureLoadState;
+
+typedef struct {
+    char name[TEXTURE_NAME_BYTES];
+    char filename[TEXTURE_PATH_BYTES];
+    const CPUTexture *texture;
+    TextureLoadState state;
+} TextureRecord;
+
 typedef struct {
     CPUTexture textures[TEXTURE_CAPACITY];
     size_t count;
+
+    TextureRecord records[TEXTURE_CAPACITY];
+    size_t record_count;
+
+    const CPUTexture *fallback;
 } TextureBook;
 
 typedef struct {

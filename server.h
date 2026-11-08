@@ -47,6 +47,24 @@ bool server_get_entity_state(const Server *server, size_t index, EntityState *ou
  */
 bool server_build_snapshot(const Server *server, ServerSnapshot *out);
 
+/**
+ * @brief Build the room in the server-owned World.
+ * @param server Non-null initialized or zero-initialized server.
+ * @return False on construction failure; previous map is unchanged.
+ * @note Startup operation; does not reset entities or publish map data.
+ */
+bool server_load_test_map(Server *server);
+
+
+
+/**
+ * @brief Copies map from Server construction.
+ * @param server Non-null initialized or zero-initialized server.
+ * @param out MapData returned
+ * @return False on inability to access or allocate.
+ */
+bool server_copy_map(const Server *server, MapData *out);
+
 #ifdef __cplusplus
 }
 #endif

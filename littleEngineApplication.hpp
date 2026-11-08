@@ -23,11 +23,12 @@ class Application {
          * @brief Initialize the owned engine once.
          * @param width Positive framebuffer width in pixels.
          * @param height Positive framebuffer height in pixels.
+         * @param game_directory Asset root copied by the engine during initialization.
          * @return True after successful startup; false on startup failure or if already initialized.
          */
-        bool initialize(int width, int height) {
+        bool initialize(int width, int height, const char *game_directory) {
             if (initialized_) return false;
-        initialized_ = engine_init(&engine_, width, height);
+        initialized_ = engine_init(&engine_, width, height, game_directory);
         return initialized_;
         }
          

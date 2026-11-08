@@ -18,6 +18,10 @@ extern "C" {
  */
 CPUTexture *texture_book_load_png(TextureBook *book, const char *path);
 
+bool texture_book_read_catalog(TextureBook *book, const char *path);
+
+const CPUTexture *texture_book_resolve(TextureBook *book, const char *name);
+
 #ifdef __cplusplus
 }
 #endif
