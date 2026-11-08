@@ -25,6 +25,9 @@ bool texture_init(CPUTexture *texture, int width, int height){
     texture->height = height;
     texture->pixels = pixels;
 
+    //by default textures do not repeat
+    texture->repeat = false;
+
     return true;
 }
 void texture_shutdown(CPUTexture *texture) {
@@ -70,9 +73,14 @@ void texture_book_shutdown(TextureBook *book) {
 
 uint32_t texture_sample(const CPUTexture *texture, float u, float v)
 {
-    // assume valid texel and finite uv -- will error out otherwise
-    u = u < 0.0f ? 0.0f : (u > 1.0f ? 1.0f : u);
-    v = v < 0.0f ? 0.0f : (v > 1.0f ? 1.0f : v);
+    // if texture repeat flag is set, trigger uv wrapping (keeps the fractional part)
+    if (texture->repeat) {
+        u -= floorf(u);
+        v -= floorf(v);
+    } else {
+        u = u < 0.0f ? 0.0f : (u > 1.0f ? 1.0f : u);
+        v = v < 0.0f ? 0.0f : (v > 1.0f ? 1.0f : v);
+    }
 
     int x = (int)(u * texture->width);
     int y = (int)(v * texture->height);
@@ -145,8 +153,7 @@ typedef struct {
  */
 static RasterVertex make_raster_vertex(ProjectedVertex p, Point2 uv)
 {
-    return (RasterVertex){.screen = p.screen,.inverse_depth = p.inverse_depth,.u_over_depth = uv.x * p.inverse_depth,
-        .v_over_depth = uv.y * p.inverse_depth};
+    return (RasterVertex){.screen = p.screen,.inverse_depth = p.inverse_depth,.u_over_depth = uv.x * p.inverse_depth, .v_over_depth = uv.y * p.inverse_depth};
 }
 
 /**
@@ -164,18 +171,13 @@ static RasterVertex make_raster_vertex(ProjectedVertex p, Point2 uv)
  * @note Either winding is accepted; zero-area triangles are skipped. Larger 1/Z wins.
  * UVs are recovered from interpolated u/Z and v/Z; no allocation or geometric clipping occurs.
  */
-static void fill_triangle(
-    uint32_t *pixels,
-    DepthBuffer *depth,
-    int width,
-    int height,
-    int pitch,
-    RasterVertex a,
-    RasterVertex b,
-    RasterVertex c,
-    uint32_t color,
-    const CPUTexture *texture)
-{
+static void fill_triangle(uint32_t *pixels,DepthBuffer *depth,int width,int height,int pitch,RasterVertex a,RasterVertex b,RasterVertex c,uint32_t color,const CPUTexture *texture)
+{   
+    //incremental evaluation
+    //calculate the three edge values at the first pixel center
+    //advance across each row using three additions
+    //advance the row’s starting values using three additions
+    //keep the existing top-left rule, depth testing, and perspective-correct UV calculations
     float area = edge(a.screen,b.screen,c.screen);
 
     //collinear vertices don't enclose tri
@@ -202,20 +204,39 @@ static void fill_triangle(
     int x1 = (int)max_finite(0.0f, min_finite((float)width, ceilf(max_x)));
     int y1 = (int)max_finite(0.0f, min_finite((float)height, ceilf(max_y)));
 
+    //calculate the three edge values at the first pixel center, once per triangle
     bool ab = inclusive_edge(a.screen, b.screen);
     bool bc = inclusive_edge(b.screen, c.screen);
     bool ca = inclusive_edge(c.screen, a.screen);
+    
+
+    if (x0 >= x1 || y0 >= y1) return;
+
+    // delta edge value when moving pixel right
+    float step_x0 = a.screen.y - b.screen.y;
+    float step_x1 = b.screen.y - c.screen.y;
+    float step_x2 = c.screen.y - a.screen.y;
+    // delta edge value when moving pixel down
+    float step_y0 = b.screen.x - a.screen.x;
+    float step_y1 = c.screen.x - b.screen.x;
+    float step_y2 = a.screen.x - c.screen.x;
+
+    //evaluate the first pixel center
+    Point2 first = {x0 + 0.5f, y0 + 0.5f};
+
+    float row_e0 = edge(a.screen, b.screen, first);
+    float row_e1 = edge(b.screen, c.screen, first);
+    float row_e2 = edge(c.screen, a.screen, first);
 
     for (int y = y0; y < y1; ++y) {
         uint32_t *row = (uint32_t *)((uint8_t *)pixels + (size_t)y * pitch);
 
-        for (int x = x0; x < x1; ++x) {
-            Point2 p = {x + 0.5f, y + 0.5f};
+        float e0 = row_e0;
+        float e1 = row_e1;
+        float e2 = row_e2;
 
-            float e0 = edge(a.screen, b.screen, p);
-            float e1 = edge(b.screen, c.screen, p);
-            float e2 = edge(c.screen, a.screen, p);
-
+        for (int x = x0; x < x1;
+            ++x, e0 += step_x0, e1 += step_x1, e2 += step_x2) {
             bool inside = (e0 > 0.0f || (e0 == 0.0f && ab)) && (e1 > 0.0f || (e1 == 0.0f && bc)) && (e2 > 0.0f || (e2 == 0.0f && ca));
 
             if (inside) {
@@ -227,21 +248,25 @@ static void fill_triangle(
                 size_t index = (size_t)y * depth->width + x;
                 if (q > depth->values[index]) {
                     depth->values[index] = q;
-                if (texture) {
-                    float uq =weight_a * a.u_over_depth + weight_b * b.u_over_depth + weight_c * c.u_over_depth;
-                    float vq = weight_a * a.v_over_depth + weight_b * b.v_over_depth + weight_c * c.v_over_depth;
-                    float u = uq / q;
-                    float v = vq / q;
-                    row[x] = texture_sample(texture, u, v);
-                }
-                else {
-                    row[x] = color;
-                }
-            }
-        }
-    }
-}
-}
+                    if (texture) {
+                        float uq =weight_a * a.u_over_depth + weight_b * b.u_over_depth + weight_c * c.u_over_depth;
+                        float vq = weight_a * a.v_over_depth + weight_b * b.v_over_depth + weight_c * c.v_over_depth;
+                        float u = uq / q;
+                        float v = vq / q;
+                        row[x] = texture_sample(texture, u, v);
+                    }
+                    else {
+                        row[x] = color;
+                    }
+                } // depth test 
+            }     // inside triangle 
+        }         // x loop 
+        // new row starts from these values n not from the edge values left at the right-hand end of the previous row -- incremental edge evaluation
+        row_e0 += step_y0;
+        row_e1 += step_y1;
+        row_e2 += step_y2;
+    }             // y loop 
+}                 // fill_triangle 
 
 
 /**
@@ -286,13 +311,8 @@ bool draw_wireframe_mesh(uint32_t *pixels, int screen_width, int screen_height,
             v.z + position.z
         };
 
-        if (!camera_project(
-            camera,
-            world,
-            screen_width,
-            screen_height,
-            &points[i])) {
-                return false;
+        if (!camera_project(camera,world,screen_width,screen_height,&points[i])) {
+            return false;
             }
         }
     // draw edges
@@ -300,16 +320,7 @@ bool draw_wireframe_mesh(uint32_t *pixels, int screen_width, int screen_height,
         int a = mesh.edges[i].start_index;
         int b = mesh.edges[i].end_index;
 
-        draw_line(
-            pixels,
-            screen_width,
-            screen_height,
-            (int)points[a].screen.x,
-            (int)points[a].screen.y,
-            (int)points[b].screen.x,
-            (int)points[b].screen.y,
-            color
-        );
+        draw_line(pixels,screen_width,screen_height,(int)points[a].screen.x,(int)points[a].screen.y,(int)points[b].screen.x,(int)points[b].screen.y,color);
     }
     return true;
 }
@@ -365,6 +376,9 @@ bool draw_mesh(uint32_t *pixels, int screen_width, int screen_height,
         // fill triangle in mesh
         for (int i = 0; i < mesh.triangle_count; ++i) {
             Triangle triangle = mesh.triangles[i];
+
+            // reject triangle if not front facing; rejected triangles skip clipping, projection, coverage tests, depth tests, and texture sampling
+            if (!triangle_is_front_facing(points[triangle.a],points[triangle.b],points[triangle.c])) {continue;}
 
             ClipVertex input[3] = {{points[triangle.a], triangle.uv_a},{points[triangle.b], triangle.uv_b},{points[triangle.c], triangle.uv_c}};
             ClipVertex clipped[4];

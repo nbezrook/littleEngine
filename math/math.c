@@ -7,6 +7,33 @@
 #include "math_types.h"
 
 /**
+ * Clamp passed float by low and high float parameters.
+ */
+float clamp_float(float value, float low, float high)
+{
+    return value < low ? low : (value > high ? high : value);
+}
+
+/**
+ * Test a triangle in view space, where the camera is at the origin.
+ * Assumes consistently wound, one-sided geometry.
+ */
+static bool triangle_is_front_facing(Vector3 a, Vector3 b, Vector3 c)
+{
+    //produces a normal determined by the triangle vertex order
+    Vector3 ab = {b.x - a.x, b.y - a.y, b.z - a.z};
+    Vector3 ac = {c.x - a.x, c.y - a.y, c.z - a.z};
+    // direction from vertex a toward the camera is -a camera is at zero in view space
+    Vector3 normal = {ab.y * ac.z - ab.z * ac.y,ab.z * ac.x - ab.x * ac.z,ab.x * ac.y - ab.y * ac.x};
+    //front-facing normal has normal * (-a) > 0, equivalently normal * a < 0
+    float facing = normal.x * a.x
+                 + normal.y * a.y
+                 + normal.z * a.z;
+
+    return facing < 0.0f;
+}
+
+/**
  * @brief Compute integer magnitude using an arithmetic-right-shift bit trick.
  * @param n Input other than INT_MIN; intermediate signed arithmetic must remain representable.
  * @return Nonnegative magnitude on the assumed two's-complement, arithmetic-shift target.

@@ -1,5 +1,26 @@
 #include "server.h"
 #include "map.h"
+#include <math.h>
+
+
+void server_spawn_player(Server *server, Vector3 position)
+{
+    server->world.player = (PlayerState){.position = position};
+    server->pending_command = (PlayerCommand){0};
+}
+
+bool server_submit_player_command(Server *server, const PlayerCommand *command)
+{
+    if (!command || !isfinite(command->forward) || !isfinite(command->right) || !isfinite(command->yaw) || !isfinite(command->pitch))
+        return false;
+    PlayerCommand accepted = *command;
+    accepted.forward = clamp_float(accepted.forward, -1.0f, 1.0f);
+    accepted.right = clamp_float(accepted.right, -1.0f, 1.0f);
+    accepted.yaw = remainderf(accepted.yaw, 6.28318530718f);
+    accepted.pitch = clamp_float(accepted.pitch, -1.55f, 1.55f);
+    server->pending_command = accepted;
+    return true;
+}
 
 
 bool server_add_entity(Server *server, Entity entity)
@@ -9,9 +30,10 @@ bool server_add_entity(Server *server, Entity entity)
 
 void server_tick(Server *server, double dt)
 {
-    world_tick(&server->world, dt);
+    world_tick(&server->world, &server->pending_command, dt);
     ++server->tick_number;
 }
+
 
 bool server_get_entity_state(const Server *server, size_t index, EntityState *out)
 {
@@ -25,6 +47,7 @@ bool server_build_snapshot(const Server *server, ServerSnapshot *out)
 
     ServerSnapshot snapshot = {
         .tick_number = server->tick_number,
+        .player = server->world.player,
         .entity_count = server->world.entity_count
     };
 

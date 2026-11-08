@@ -1,8 +1,8 @@
 CC = gcc
 CXX = g++
 
-CFLAGS = -Wall -Wextra -std=c11 -O2 -I./include
-CXXFLAGS = -Wall -Wextra -std=c++17 -O2 -I./include
+CFLAGS = -Wall -Wextra -std=c11 -O2 -g -I./include
+CXXFLAGS = -Wall -Wextra -std=c++17 -g -O2 -I./include
 
 .PHONY: all clean
 

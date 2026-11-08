@@ -14,6 +14,7 @@ typedef struct {
     uint32_t *pixels;
     int width;
     int height;
+    bool repeat;
 } CPUTexture;
 
 enum {
@@ -31,6 +32,7 @@ typedef struct {
     char name[TEXTURE_NAME_BYTES];
     char filename[TEXTURE_PATH_BYTES];
     const CPUTexture *texture;
+    bool repeat;
     TextureLoadState state;
 } TextureRecord;
 

@@ -5,8 +5,8 @@
 #include <stdio.h>
 #include <string.h>
 
-bool engine_asset_path(const Engine *engine, const char *relative_path,
-                       char *out, size_t capacity)
+// ugly f-ing thing for the sake of resolving engine asset paths, can probably be improved
+bool engine_asset_path(const Engine *engine, const char *relative_path, char *out, size_t capacity)
 {
     if (!out || capacity == 0) return false;
     out[0] = '\0';
@@ -15,8 +15,7 @@ bool engine_asset_path(const Engine *engine, const char *relative_path,
     if (length == 0) return false;
     char last = engine->game_directory[length - 1];
     const char *separator = (last == '/' || last == '\\') ? "" : "/";
-    int written = snprintf(out, capacity, "%s%s%s", engine->game_directory,
-                           separator, relative_path);
+    int written = snprintf(out, capacity, "%s%s%s", engine->game_directory,separator, relative_path);
     if (written < 0 || (size_t)written >= capacity) {
         out[0] = '\0';
         return false;
@@ -29,10 +28,15 @@ bool engine_asset_path(const Engine *engine, const char *relative_path,
  * @param engine Non-null initialized engine.
  * @param dt Step duration in seconds; currently 1/60. Does not poll events or render.
  */
-static void engine_tick (Engine *engine, double dt) {
-    InputMovement movement = input_get_movement(&engine->input);
-    camera_move(&engine->camera,movement.forward,movement.right,3.0f,dt);
+static bool engine_tick (Engine *engine, double dt) {
+    PlayerCommand command = client_build_command(&engine->client);
+    if (!server_submit_player_command(&engine->server, &command)) {
+        SDL_Log("Player command rejected.");
+        return false;
+    }
+
     server_tick(&engine->server, dt);
+    return true;
 }
 
 bool engine_init(Engine *engine, int width, int height, const char *game_directory) {
@@ -53,8 +57,8 @@ bool engine_init(Engine *engine, int width, int height, const char *game_directo
     SDL_Log("Starting littleEngine...");
     SDL_Log("Game directory: %s", engine->game_directory);
 
+    //shouldn't be hardcoded, change later (game config?)
     engine->camera = (Camera){
-    .position = {0.0f, 0.0f, -4.0f},
     .focal_length_pixels = 400.0f,
     .near_clip = 0.1f};
 
@@ -64,11 +68,14 @@ bool engine_init(Engine *engine, int width, int height, const char *game_directo
         return false;
     }
 
+    // spawn player
+    server_spawn_player(&engine->server,(Vector3){0.0f, 0.0f, -4.0f});
+
+
     if (!server_add_entity(&engine->server, (Entity){
             .position = {-1.5f, 0.0f, 0.0f},
             .rotation_rate = {0.5f, 1.0f, 0.0f}
-        }) ||
-        !server_add_entity(&engine->server, (Entity){
+        }) || !server_add_entity(&engine->server, (Entity){
             .position = {1.5f, 0.0f, 1.0f},
             .rotation_rate = {0.0f, -0.7f, 0.3f}
         })) {
@@ -111,21 +118,6 @@ bool engine_init(Engine *engine, int width, int height, const char *game_directo
         return false;
     }
 
-    if (!checker) {
-        SDL_Log("Checkerboard texture initialization failed.");
-        engine_shutdown(engine);
-        return false;
-    }
-
-    texture_make_checker(checker);
-    char texture_path[ENGINE_PATH_CAPACITY];
-
-    if (!engine_asset_path(engine, "tex/FACE.png", texture_path, sizeof texture_path)) {
-        SDL_Log("Game asset path is too long.");
-        engine_shutdown(engine);
-        return false;
-    }
-
     const CPUTexture *image = texture_book_resolve(&engine->textures, "face");
 
     if (!image) {
@@ -149,6 +141,7 @@ bool engine_init(Engine *engine, int width, int height, const char *game_directo
         return false;
     }
 
+
     // input int
 
     if (!input_init(&engine->input, engine->renderer.window)) {
@@ -160,6 +153,7 @@ bool engine_init(Engine *engine, int width, int height, const char *game_directo
     SDL_Log("littleEngine initialized.");
     return true;
 }
+
 bool engine_frame(Engine *engine) {
     const double tic_duration = 1.0 / 60.0;
     SDL_Event event;
@@ -180,9 +174,7 @@ bool engine_frame(Engine *engine) {
         input_event(&engine->input, &event);
     } 
 
-    InputLook look = input_take_look(&engine->input);
-
-    camera_apply_look(&engine->camera, look.yaw, look.pitch);
+    client_sample_input(&engine->client, &engine->input);
 
     // TIC CODE
 
@@ -191,13 +183,13 @@ bool engine_frame(Engine *engine) {
 
     engine->previous_time = now;
     if (elapsed > 0.25) {
-        elapsed = 0.25; // Avoid spiral of death
+        elapsed = 0.25; //spiral of death
     }
 
     engine->accumulator += elapsed;
 
     while (engine->accumulator >= tic_duration) {
-        engine_tick(engine, tic_duration);
+        if (!engine_tick(engine, tic_duration)) return false;
         engine->accumulator -= tic_duration;
     }
 
@@ -207,6 +199,8 @@ bool engine_frame(Engine *engine) {
         SDL_Log("Server snapshot exchange failed.");
         return false;
     }
+
+    client_update_camera(&engine->client, &engine->camera);
 
     render_frame(
         &engine->renderer,

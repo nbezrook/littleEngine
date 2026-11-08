@@ -9,8 +9,21 @@ _Static_assert(MAP_TRIANGLE_CAPACITY >= 12, "Room needs twelve triangles; check 
 _Static_assert(MAP_SURFACE_CAPACITY >= 6, "Room needs six surfaces; check Map");
 _Static_assert(MAP_TEXTURE_NAME_BYTES >= sizeof("stone_wall"),"Texture name must fit; check Map");
 
+
+
 bool map_make_test_room(MapData *out)
-{
+{ 
+    // UV REPEATS ON WALLS
+    // AI GENERATED
+    const Point2 repeats[6] = {
+        {6.0f, 2.5f},  /* Z-negative wall */
+        {6.0f, 2.5f},  /* Z-positive wall */
+        {8.0f, 2.5f},  /* X-negative wall */
+        {8.0f, 2.5f},  /* X-positive wall */
+        {6.0f, 8.0f},  /* Floor */
+        {6.0f, 8.0f}   /* Ceiling */
+    };
+
     if (room_mesh.vertex_count != 8 || room_mesh.triangle_count != 12) {
         return false;
     }
@@ -33,6 +46,18 @@ bool map_make_test_room(MapData *out)
             .triangle_count = 2,
             .texture_name = "stone_wall"
         };
+        for (size_t j = 0; j < 2; ++j) {
+            Triangle *triangle = &result.triangles[i * 2 + j];
+
+            triangle->uv_a.x *= repeats[i].x;
+            triangle->uv_a.y *= repeats[i].y;
+
+            triangle->uv_b.x *= repeats[i].x;
+            triangle->uv_b.y *= repeats[i].y;
+
+            triangle->uv_c.x *= repeats[i].x;
+            triangle->uv_c.y *= repeats[i].y;
+        }
     }
 
     if (!map_validate(&result)) return false;
@@ -40,6 +65,7 @@ bool map_make_test_room(MapData *out)
     *out = result;
     return true;
 }
+
 bool map_validate(const MapData *map)
 {
     if (!map || map->vertex_count > MAP_VERTEX_CAPACITY || map->triangle_count > MAP_TRIANGLE_CAPACITY || map->surface_count > MAP_SURFACE_CAPACITY) return false;

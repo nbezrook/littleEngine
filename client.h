@@ -4,6 +4,7 @@
 #include "game_protocol.h"
 #include "renderer.h"
 #include "math/map_types.h"
+#include "inputThinker.h"
 
 
 
@@ -16,7 +17,10 @@ typedef struct {
 
     SceneObject objects[MAP_SURFACE_CAPACITY + SNAPSHOT_ENTITY_CAPACITY];
 
-size_t map_object_count;
+    size_t map_object_count;
+
+    PlayerCommand command; // PlayerCommand to send as request to Server
+    PlayerState player; // PlayerState to query
 
     const WireframeMesh *demo_mesh;
     const CPUTexture *demo_texture;
@@ -51,6 +55,20 @@ bool client_receive_snapshot(Client *client, const ServerSnapshot *snapshot);
  * @return False for inability to receive map from Server
  */
 bool client_receive_map(Client *client, const MapData *map, TextureBook *textures);
+
+
+/** Sample held movement and consume mouse deltas once per display frame.
+ * Keeps absolute requested angles independently of the last received snapshot.
+ */
+void client_sample_input(Client *client, InputThinker *input);
+
+/** Return the latest intent by value; sampling is a separate operation. */
+PlayerCommand client_build_command(const Client *client);
+
+/** Derive view pose from the last snapshot, preserving projection settings. */
+void client_update_camera(const Client *client, Camera *camera);
+
+
 
 #ifdef __cplusplus
 }

@@ -3,10 +3,13 @@
 
 #include <stdint.h>
 #include "world.h"
+#include "math/math.h"
+
 
 typedef struct {
     World world;
     uint64_t tick_number;
+    PlayerCommand pending_command; // command to request the Server to honor
 } Server;
 
 #ifdef __cplusplus
@@ -54,9 +57,14 @@ bool server_build_snapshot(const Server *server, ServerSnapshot *out);
  * @note Startup operation; does not reset entities or publish map data.
  */
 bool server_load_test_map(Server *server);
-
-
-
+/**
+ * @brief Spawn player in Server
+ */
+void server_spawn_player(Server *server, Vector3 position);
+/**
+ * @brief Request Server to honor PlayerCommand
+ */
+bool server_submit_player_command(Server *server, const PlayerCommand *command);
 /**
  * @brief Copies map from Server construction.
  * @param server Non-null initialized or zero-initialized server.

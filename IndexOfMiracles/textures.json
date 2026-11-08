@@ -2,7 +2,8 @@
   "textures": [
     {
       "name": "stone_wall",
-      "filename": "tex/STONE.png"
+      "filename": "tex/STONE.png",
+      "repeat": true
     },
     {
       "name": "face",

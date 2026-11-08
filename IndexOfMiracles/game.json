@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "simulation": {
+    "tick_hz": 60
+  },
+  "player": {
+    "walk_speed": 3.0,
+    "half_width": 0.3,
+    "height": 1.8,
+    "eye_height": 1.6,
+    "max_pitch_degrees": 88.8
+  },
+  "view_defaults": {
+    "vertical_fov_degrees": 100.4,
+    "near_clip": 0.1
+  }
+}

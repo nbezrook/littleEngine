@@ -107,6 +107,10 @@ bool texture_book_read_catalog(TextureBook *book, const char *path)
             // let cpp handle this instead of littleEngine
             std::memcpy(pending[count].name, name.c_str(), name.size() + 1);
             std::memcpy(pending[count].filename, resolved.c_str(), resolved.size() + 1);
+
+            // by default textures don't repeat, empty value implies false
+            pending[count].repeat = entry.value("repeat", false);
+
             ++count;
         }
 
@@ -142,8 +146,11 @@ const CPUTexture *texture_book_resolve(TextureBook *book, const char *name)
         if (record.state == TEXTURE_FAILED)
             return book->fallback;
 
-        record.texture =
-            texture_book_load_png(book, record.filename);
+        CPUTexture *loaded = texture_book_load_png(book, record.filename);
+
+        if (loaded) loaded->repeat = record.repeat;
+
+        record.texture = loaded;
 
         if (record.texture) {
             record.state = TEXTURE_READY;

@@ -2,6 +2,32 @@
 #include "map.h"
 #include <cstring>
 #include "assetsThinker.h"
+#include <cmath>
+
+void client_sample_input(Client *client, InputThinker *input)
+{
+    InputMovement movement = input_get_movement(input);
+    InputLook look = input_take_look(input);
+    client->command.forward = movement.forward;
+    client->command.right = movement.right;
+    // magic values; should not be hardcoded
+    client->command.yaw = std::remainder(client->command.yaw + look.yaw, 6.28318530718f);
+    client->command.pitch += look.pitch;
+    if (client->command.pitch > 1.55f) client->command.pitch = 1.55f;
+    if (client->command.pitch < -1.55f) client->command.pitch = -1.55f;
+}
+
+PlayerCommand client_build_command(const Client *client)
+{
+    return client->command;
+}
+
+void client_update_camera(const Client *client, Camera *camera)
+{
+    camera->position = client->player.position;
+    camera->yaw = client->player.yaw;
+    camera->pitch = client->player.pitch;
+}
 
 void client_init(Client *client, const WireframeMesh *mesh, const CPUTexture *texture)
 {
@@ -15,6 +41,8 @@ bool client_receive_snapshot(Client *client, const ServerSnapshot *snapshot)
 {
     if (snapshot->entity_count > SNAPSHOT_ENTITY_CAPACITY)
         return false;
+
+    client->player = snapshot->player;
 
     for (size_t i = 0; i < snapshot->entity_count; ++i) {
         SceneObject &object = client->objects[client->map_object_count + i];
@@ -55,7 +83,7 @@ bool client_receive_map(Client *client, const MapData *map, TextureBook *texture
 
         SceneObject &object = client->objects[i];
         object = SceneObject{};
-
+        //hardcoded values to be abstracted away later
         object.mesh = &mesh;
         object.texture = texture_book_resolve(textures, surface.texture_name);
         object.color = 0x00808080;

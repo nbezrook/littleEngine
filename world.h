@@ -13,6 +13,7 @@ typedef struct {
     MapData map;
     Entity entities[WORLD_ENTITY_CAPACITY];
     size_t entity_count;
+    PlayerState player; // authoritative player; can be expanded
 } World;
 
 #ifdef __cplusplus
@@ -30,9 +31,10 @@ bool world_add_entity(World *world, Entity entity);
 /**
  * @brief Advance all entities by one simulation step.
  * @param world Non-null valid world.
+ * @param world PlayerCommand that interfaces with the world
  * @param dt Nonnegative step in seconds.
  */
-void world_tick(World *world, double dt);
+void world_tick(World *world, const PlayerCommand *command, double dt);
 
 /**
  * @brief Copy one entity's public state to the caller.

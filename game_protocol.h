@@ -5,6 +5,25 @@
 #include <stddef.h>
 #include <stdint.h>
 
+
+/**
+ * @brief Structured player command as understood by the server
+ */
+typedef struct {
+    float forward;
+    float right;
+    float yaw;
+    float pitch;
+} PlayerCommand;
+/**
+ * @brief Description of player state.
+ */
+typedef struct {
+    Vector3 position;
+    float yaw;
+    float pitch;
+} PlayerState;
+
 /**
  * @brief Public simulation state copied to presentation.
  * @note Runtime data, not a serialized file or network format.
@@ -24,6 +43,7 @@ typedef struct {
     uint64_t tick_number;
     size_t entity_count;
     EntityState entities[SNAPSHOT_ENTITY_CAPACITY];
+    PlayerState player; // server sends description of player states, this can be expanded to more
 } ServerSnapshot;
 
 #endif
