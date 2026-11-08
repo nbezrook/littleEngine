@@ -1,5 +1,5 @@
 #include "assetsThinker.h"
-
+#include <SDL3/SDL.h>
 #include <cstddef>
 #include <cstring>
 #include <memory>
@@ -11,7 +11,104 @@
 
 #include "include\nlohmann\json.hpp"
 
+#include <cmath>
+#include <limits>
+
 using SurfacePtr = std::unique_ptr<SDL_Surface, decltype(&SDL_DestroySurface)>;
+
+
+namespace {
+    /**
+    The config_number function retrieves a numeric value from a JSON object using the specified key and ensures that the value is a finite number within the range of a float. 
+    If the value is not a number or exceeds the float limits, it throws a runtime error with an appropriate message. 
+    */
+    float config_number(const nlohmann::json &object, const char *name)
+    {
+        const auto &field = object.at(name);
+        if (!field.is_number())
+            throw std::runtime_error(std::string("Expected number: ") + name);
+
+        double value = field.get<double>();
+        double limit = std::numeric_limits<float>::max();
+        if (!std::isfinite(value) || value < -limit || value > limit)
+            throw std::runtime_error(std::string("Number out of float range: ") + name);
+        return static_cast<float>(value);
+    }
+}
+/**
+ * @note The game_config_load_json function loads game configuration settings from a JSON file specified by the path parameter into a GameConfig structure pointed to by out. 
+It validates the JSON content, ensuring the schema version and various configuration values meet specified criteria, and returns true if successful or false if any errors occur during the process.
+*/
+bool game_config_load_json(GameConfig *out, const char *path)
+{
+    if (!out || !path || !path[0]) return false;
+    // boilerplate code to wrangle json, nothing pretty about it
+    try {
+        std::ifstream file(path);
+        if (!file) throw std::runtime_error("Cannot open game config");
+        const auto document = nlohmann::json::parse(file);
+
+        const auto &version = document.at("schema_version");
+        if (!version.is_number_integer() || version != 1)
+            throw std::runtime_error("Unsupported schema_version; expected integer 1");
+
+        const auto &tick = document.at("simulation").at("tick_hz");
+        // Initial supported range; changing tick rate requires a session restart.
+        if (!tick.is_number_integer() || tick < 1 || tick > 240)
+            throw std::runtime_error("tick_hz must be an integer from 1 to 240");
+
+        GameConfig result{};
+        result.tick_hz = tick.get<unsigned>();
+
+        const auto &player = document.at("player");
+        result.player.walk_speed = config_number(player, "walk_speed");
+        result.player.half_width = config_number(player, "half_width");
+        result.player.height = config_number(player, "height");
+        result.player.eye_height = config_number(player, "eye_height");
+        float pitch_degrees = config_number(player, "max_pitch_degrees");
+
+        result.player.jump_speed = config_number(player, "jump_speed");
+
+        if (result.player.jump_speed < 0.0f)
+            throw std::runtime_error("jump_speed must be nonnegative");
+
+        if (result.player.walk_speed < 0.0f)
+            throw std::runtime_error("walk_speed must be nonnegative");
+        if (result.player.half_width <= 0.0f || result.player.height <= 0.0f)
+            throw std::runtime_error("Player dimensions must be positive");
+        if (result.player.eye_height <= 0.0f ||
+            result.player.eye_height >= result.player.height)
+            throw std::runtime_error("eye_height must be between zero and height");
+        if (pitch_degrees <= 0.0f || pitch_degrees >= 90.0f)
+            throw std::runtime_error("max_pitch_degrees must be between zero and 90");
+
+        const auto &view = document.at("view_defaults");
+        float fov_degrees = config_number(view, "vertical_fov_degrees");
+        result.near_clip = config_number(view, "near_clip");
+        if (fov_degrees <= 0.0f || fov_degrees >= 180.0f)
+            throw std::runtime_error("vertical_fov_degrees must be between zero and 180");
+        if (result.near_clip <= 0.0f)
+            throw std::runtime_error("near_clip must be positive");
+
+        result.gravity = config_number(document.at("physics"), "gravity");
+        if (result.gravity < 0.0f) 
+            throw std::runtime_error("gravity must be nonnegative");
+
+        constexpr float degrees_to_radians = 0.017453292519943295f;
+        result.player.max_pitch_radians = pitch_degrees * degrees_to_radians;
+        result.vertical_fov_radians = fov_degrees * degrees_to_radians;
+        if (result.player.max_pitch_radians <= 0.0f ||
+            result.vertical_fov_radians <= 0.0f)
+            throw std::runtime_error("Angle is too small after conversion");
+
+        *out = result;
+        return true;
+    } catch (const std::exception &error) {
+        SDL_Log("Game config '%s': %s", path, error.what());
+        return false;
+    }
+}
+
 
 CPUTexture *texture_book_load_png(TextureBook *book, const char *path)
 {
@@ -159,18 +256,10 @@ const CPUTexture *texture_book_resolve(TextureBook *book, const char *name)
 
         record.state = TEXTURE_FAILED;
 
-        SDL_LogWarn(
-            SDL_LOG_CATEGORY_APPLICATION,
-            "Texture '%s' failed to load; using checker.",
-            name);
-
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,"Texture '%s' failed to load; using checker.",name);
         return book->fallback;
     }
 
-    SDL_LogWarn(
-        SDL_LOG_CATEGORY_APPLICATION,
-        "Unknown texture '%s'; using checker.",
-        name);
-
+    SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Unknown texture '%s'; using checker.", name);
     return book->fallback;
 }

@@ -4,6 +4,7 @@
 #include "math/math_types.h"
 #include <stddef.h>
 #include <stdint.h>
+#include <stdbool.h>
 
 
 /**
@@ -14,6 +15,7 @@ typedef struct {
     float right;
     float yaw;
     float pitch;
+    bool jump;
 } PlayerCommand;
 /**
  * @brief Description of player state.

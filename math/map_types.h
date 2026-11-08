@@ -1,8 +1,9 @@
 #ifndef LITTLEENGINE_MAP_TYPES_H
 #define LITTLEENGINE_MAP_TYPES_H
 
-#include <stddef.h>
+#include <stdbool.h>
 #include "math_types.h"
+#include <stddef.h>
 
 enum {
     MAP_VERTEX_CAPACITY = 128,
@@ -10,6 +11,14 @@ enum {
     MAP_SURFACE_CAPACITY = 16,
     MAP_TEXTURE_NAME_BYTES = 64
 };
+
+/**
+ * @brief room boundary struct
+ */
+typedef struct {
+    Vector3 min;
+    Vector3 max;
+} RoomBounds;
 
 /**
  * @brief Consecutive triangles sharing one texture reference.
@@ -33,6 +42,10 @@ typedef struct {
     size_t vertex_count;
     size_t triangle_count;
     size_t surface_count;
+
+    bool has_room_bounds;
+    RoomBounds room_bounds;
+    Vector3 player_spawn;
 } MapData;
 
 #endif

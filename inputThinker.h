@@ -24,6 +24,8 @@ typedef struct {
     float pending_yaw;
     float pending_pitch;
     float mouse_sensitivity;
+
+    bool jump_pressed;
 } InputThinker;
 
 
@@ -69,6 +71,14 @@ InputLook input_take_look(InputThinker *input);
  * @note No capture resource is currently acquired. Add capture release when capture is implemented.
  */
 void input_shutdown(InputThinker *input);
+
+/**
+ * @brief request input thinker to request jump
+ * @param input State to reset.
+ * @return true on success
+ */
+bool input_take_jump(InputThinker *input);
+
 
 #ifdef __cplusplus
 }

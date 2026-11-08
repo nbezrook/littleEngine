@@ -19,6 +19,9 @@ typedef struct {
 
     size_t map_object_count;
 
+    float max_pitch_radians;
+    float eye_height;
+
     PlayerCommand command; // PlayerCommand to send as request to Server
     PlayerState player; // PlayerState to query
 
@@ -37,7 +40,7 @@ extern "C" {
  * @param texture Borrowed texture, or NULL for solid color.
  * @note No allocation or resource ownership is transferred.
  */
-void client_init(Client *client, const WireframeMesh *mesh, const CPUTexture *texture);
+void client_init(Client *client, const WireframeMesh *mesh, const CPUTexture *texture, float max_pitch_radians, float eye_height);
 
 /**
  * @brief Replace presentation state from a complete server snapshot.
@@ -68,7 +71,7 @@ PlayerCommand client_build_command(const Client *client);
 /** Derive view pose from the last snapshot, preserving projection settings. */
 void client_update_camera(const Client *client, Camera *camera);
 
-
+PlayerCommand client_take_command(Client *client);
 
 #ifdef __cplusplus
 }

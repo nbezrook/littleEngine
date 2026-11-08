@@ -1,5 +1,6 @@
 #include "world.h"
 #include <math.h>
+#include "math/math.h"
 
 bool world_add_entity(World *world, Entity entity)
 {
@@ -25,12 +26,31 @@ void world_tick(World *world, const PlayerCommand *command, double dt)
         right *= inverse_length;
     }
 
-    const float speed = 3.0f; // simulation rule
-    float distance = speed * (float)dt;
+
     float sy = sinf(player->yaw);
     float cy = cosf(player->yaw);
-    player->position.x += (forward * sy + right * cy) * distance;
-    player->position.z += (forward * cy - right * sy) * distance;
+
+    float speed = world->player_rules.walk_speed;
+
+    world->player_motion.velocity.x = (forward * sy + right * cy) * speed;
+
+    world->player_motion.velocity.z = (forward * cy - right * sy) * speed;
+
+    // LEGAL JUMP?
+    if (command->jump && world->player_motion.grounded) {
+        world->player_motion.velocity.y =
+            world->player_rules.jump_speed;
+
+        world->player_motion.grounded = false;
+    }
+
+    // PLAYER PHYSICS
+    physics_integrate(&player->position, &world->player_motion, world->gravity, dt);
+
+    if (world->map.has_room_bounds) {
+        physics_constrain_room(&player->position, &world->player_motion, &world->map.room_bounds, world->player_rules.half_width, world->player_rules.height);
+    }
+
 
     for (size_t i = 0; i < world->entity_count; ++i)
         entity_tick(&world->entities[i], dt);

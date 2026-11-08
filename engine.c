@@ -4,6 +4,7 @@
 #include "assetsThinker.h"
 #include <stdio.h>
 #include <string.h>
+#include <math.h>
 
 // ugly f-ing thing for the sake of resolving engine asset paths, can probably be improved
 bool engine_asset_path(const Engine *engine, const char *relative_path, char *out, size_t capacity)
@@ -29,7 +30,7 @@ bool engine_asset_path(const Engine *engine, const char *relative_path, char *ou
  * @param dt Step duration in seconds; currently 1/60. Does not poll events or render.
  */
 static bool engine_tick (Engine *engine, double dt) {
-    PlayerCommand command = client_build_command(&engine->client);
+    PlayerCommand command = client_take_command(&engine->client);;
     if (!server_submit_player_command(&engine->server, &command)) {
         SDL_Log("Player command rejected.");
         return false;
@@ -57,20 +58,28 @@ bool engine_init(Engine *engine, int width, int height, const char *game_directo
     SDL_Log("Starting littleEngine...");
     SDL_Log("Game directory: %s", engine->game_directory);
 
-    //shouldn't be hardcoded, change later (game config?)
+    char config_path[ENGINE_PATH_CAPACITY];
+
+    if (!engine_asset_path(engine, "game.json",config_path, sizeof config_path) || !game_config_load_json(&engine->config, config_path)) {
+        SDL_Log("Game configuration initialization failed.");
+        debug_console_shutdown(&engine->console);
+        return false;
+    }
+
+    SDL_Log("Game config: %u Hz, walk speed %.2f m/s", engine->config.tick_hz, engine->config.player.walk_speed);
+    server_init(&engine->server, &engine->config.player, engine->config.gravity);
+
+    //use game_config
     engine->camera = (Camera){
-    .focal_length_pixels = 400.0f,
-    .near_clip = 0.1f};
+        .focal_length_pixels = 0.5f * (float)height / tanf(0.5f * engine->config.vertical_fov_radians),
+        .near_clip = engine->config.near_clip
+    };
 
     if (!server_load_test_map(&engine->server)) {
         SDL_Log("Test map creation failed.");
         debug_console_shutdown(&engine->console);
         return false;
     }
-
-    // spawn player
-    server_spawn_player(&engine->server,(Vector3){0.0f, 0.0f, -4.0f});
-
 
     if (!server_add_entity(&engine->server, (Entity){
             .position = {-1.5f, 0.0f, 0.0f},
@@ -124,11 +133,9 @@ bool engine_init(Engine *engine, int width, int height, const char *game_directo
         image = checker;
     }
 
-    // little unit cube object 
-    client_init(&engine->client, &cube_mesh, image);
-    // REPLACE WITH SCENE SPACE
-
-
+    // initiate client
+    client_init(&engine->client, &cube_mesh, image, engine->config.player.max_pitch_radians, engine->config.player.eye_height);
+    
     // tic init
     engine->previous_time = SDL_GetPerformanceCounter();
 
@@ -155,7 +162,7 @@ bool engine_init(Engine *engine, int width, int height, const char *game_directo
 }
 
 bool engine_frame(Engine *engine) {
-    const double tic_duration = 1.0 / 60.0;
+    const double tic_duration = 1.0 / (double)engine->config.tick_hz;
     SDL_Event event;
 
     while (SDL_PollEvent(&event)) {

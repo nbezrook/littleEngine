@@ -1,98 +1,66 @@
 #include "renderer.h"
-#include "math/math.c"
 #include "math/math_types.h"
 #include "math/primitives.h"
 #include "camera.h"
 #include "clipping.h"
 
-bool texture_init(CPUTexture *texture, int width, int height){
-    if (width <= 0 || height <= 0) return false;
+#include "math/math.h"
+#include <math.h>
+#include <stdlib.h>
 
-    size_t w = (size_t)width;
-    size_t h = (size_t)height;
 
-    if (w > SIZE_MAX / h) return false;
 
-    size_t count = w * h;
-    
-    if (count > SIZE_MAX / sizeof(*texture->pixels)) return false;
 
-    uint32_t *pixels = malloc(count * sizeof(*pixels));
 
-    if (!pixels) return false;
 
-    texture->width = width;
-    texture->height = height;
-    texture->pixels = pixels;
 
-    //by default textures do not repeat
-    texture->repeat = false;
-
-    return true;
-}
-void texture_shutdown(CPUTexture *texture) {
-    if (texture != NULL) {
-        free(texture->pixels);
-        *texture = (CPUTexture){0};
-    }
+/**
+ * @brief Return the signed 2D cross product (b-a) x (p-a).
+ * @param a Directed edge start.
+ * @param b Directed edge end.
+ * @param p Point to classify.
+ * @return Signed doubled triangle area, used for coverage and barycentric weights.
+ */
+static float edge(Point2 a, Point2 b, Point2 p) {
+    // signed 2d cross product
+    return (b.x-a.x)*(p.y-a.y)-(b.y-a.y)*(p.x-a.x);
 }
 
-void texture_make_checker(CPUTexture *texture) {
-    for (int y = 0; y < texture->height; ++y) {
-        for (int x = 0; x < texture->width; ++x) {
-            bool alternate = ((x / 8) + (y / 8)) & 1;
 
-            size_t index = (size_t)y * texture->width + x;
-
-            texture->pixels[index] =
-                alternate ? 0x00FFFFFF : 0x00800080;
-        }
-    }
-}
-
-CPUTexture *texture_book_create(TextureBook *book, int width, int height)
+/**
+ * Test a triangle in view space, where the camera is at the origin.
+ * Assumes consistently wound, one-sided geometry.
+ */
+static bool triangle_is_front_facing(Vector3 a, Vector3 b, Vector3 c)
 {
-    if (book->count >= TEXTURE_CAPACITY) return NULL;
-    
-    CPUTexture *texture = &book->textures[book->count];
+    //produces a normal determined by the triangle vertex order
+    Vector3 ab = {b.x - a.x, b.y - a.y, b.z - a.z};
+    Vector3 ac = {c.x - a.x, c.y - a.y, c.z - a.z};
+    // direction from vertex a toward the camera is -a camera is at zero in view space
+    Vector3 normal = {ab.y * ac.z - ab.z * ac.y,ab.z * ac.x - ab.x * ac.z,ab.x * ac.y - ab.y * ac.x};
+    //front-facing normal has normal * (-a) > 0, equivalently normal * a < 0
+    float facing = normal.x * a.x
+                 + normal.y * a.y
+                 + normal.z * a.z;
 
-    if (!texture_init(texture, width, height)) return NULL;
-
-    ++book->count;
-
-    return texture;
+    return facing < 0.0f;
 }
 
-void texture_book_shutdown(TextureBook *book) {
-    while (book->count > 0) {
-        --book->count;
-        texture_shutdown(&book->textures[book->count]);
-    }
-    *book = (TextureBook){0};
+
+
+/**
+ * @brief Identify inclusive edges for the rasterizer's screen-space top-left fill rule.
+ * @param a Directed edge start.
+ * @param b Directed edge end.
+ * @return True for upward edges or horizontal edges directed right.
+ * @note Assumes screen Y increases downward and interior edge values are positive.
+ */
+static bool inclusive_edge(Point2 a, Point2 b) {
+    float dx = b.x - a.x;
+    float dy = b.y - a.y; 
+    return dy < 0.0f || (dy == 0.0f && dx > 0.0f);
 }
 
-uint32_t texture_sample(const CPUTexture *texture, float u, float v)
-{
-    // if texture repeat flag is set, trigger uv wrapping (keeps the fractional part)
-    if (texture->repeat) {
-        u -= floorf(u);
-        v -= floorf(v);
-    } else {
-        u = u < 0.0f ? 0.0f : (u > 1.0f ? 1.0f : u);
-        v = v < 0.0f ? 0.0f : (v > 1.0f ? 1.0f : v);
-    }
-
-    int x = (int)(u * texture->width);
-    int y = (int)(v * texture->height);
-
-    if (x >= texture->width)
-        x = texture->width - 1;
-    if (y >= texture->height)
-        y = texture->height - 1;
-
-    size_t index = (size_t)y * texture->width + x;
-    return texture->pixels[index];
-}
 
 /**
  * @brief Draw a solid integer line, skipping samples outside the framebuffer.

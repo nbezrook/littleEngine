@@ -73,6 +73,14 @@ bool server_submit_player_command(Server *server, const PlayerCommand *command);
  */
 bool server_copy_map(const Server *server, MapData *out);
 
+/**
+ * @brief initializes Server ruleset based on PlayerRules passed 
+ * @param server Non-null initialized or zero-initialized server.
+ * @param rules ruleset determining Server values
+ * @param gravity gravity constant
+ */
+void server_init(Server *server, const PlayerRules *rules, float gravity);
+
 #ifdef __cplusplus
 }
 #endif

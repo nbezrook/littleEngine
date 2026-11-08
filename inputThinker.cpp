@@ -40,6 +40,7 @@ void input_event(InputThinker *input, const SDL_Event *event){
         input->right_down = false;
         input->pending_yaw = 0.0f;
         input->pending_pitch = 0.0f;
+        input->jump_pressed = false;
         return;
     }
 
@@ -74,6 +75,10 @@ void input_event(InputThinker *input, const SDL_Event *event){
         case SDL_SCANCODE_S: input->backward_down = down; break;
         case SDL_SCANCODE_A: input->left_down = down; break;
         case SDL_SCANCODE_D: input->right_down = down; break;
+        case SDL_SCANCODE_SPACE:
+            if (down && !event->key.repeat)
+                input->jump_pressed = true;
+            break;
         default: break;
     }
 }
@@ -99,4 +104,13 @@ void input_shutdown(InputThinker *input)
     if (!input) return;
     if (input->window) input_set_capture(input, false);
     *input = InputThinker{};
+}
+
+bool input_take_jump(InputThinker *input)
+{
+    if (!input) return false;
+
+    bool pressed = input->jump_pressed;
+    input->jump_pressed = false;
+    return pressed;
 }

@@ -37,6 +37,22 @@ bool map_make_test_room(MapData *out)
     for (size_t i = 0; i < result.vertex_count; ++i)
         result.vertices[i] = room_mesh.vertices[i];
 
+    // axis-alligned rectangular bounds generator
+    result.has_room_bounds = true;
+    result.room_bounds.min = result.vertices[0];
+    result.room_bounds.max = result.vertices[0];
+    for (size_t i = 1; i < result.vertex_count; ++i) {
+        Vector3 p = result.vertices[i];
+        if (p.x < result.room_bounds.min.x) result.room_bounds.min.x = p.x;
+        if (p.y < result.room_bounds.min.y) result.room_bounds.min.y = p.y;
+        if (p.z < result.room_bounds.min.z) result.room_bounds.min.z = p.z;
+        if (p.x > result.room_bounds.max.x) result.room_bounds.max.x = p.x;
+        if (p.y > result.room_bounds.max.y) result.room_bounds.max.y = p.y;
+        if (p.z > result.room_bounds.max.z) result.room_bounds.max.z = p.z;
+    }
+
+    result.player_spawn = (Vector3){0.0f, result.room_bounds.min.y, -4.0f};
+
     for (size_t i = 0; i < result.triangle_count; ++i)
         result.triangles[i] = room_mesh.triangles[i];
 
@@ -68,7 +84,23 @@ bool map_make_test_room(MapData *out)
 
 bool map_validate(const MapData *map)
 {
-    if (!map || map->vertex_count > MAP_VERTEX_CAPACITY || map->triangle_count > MAP_TRIANGLE_CAPACITY || map->surface_count > MAP_SURFACE_CAPACITY) return false;
+    if (!map || map->vertex_count > MAP_VERTEX_CAPACITY 
+        || map->triangle_count > MAP_TRIANGLE_CAPACITY 
+        || map->surface_count > MAP_SURFACE_CAPACITY) return false;
+
+    Vector3 spawn = map->player_spawn;
+    if (!isfinite(spawn.x) || !isfinite(spawn.y) || !isfinite(spawn.z)) return false;
+    if (map->has_room_bounds) {
+        Vector3 lo = map->room_bounds.min;
+        Vector3 hi = map->room_bounds.max;
+        //identify bounds in map
+        if (!isfinite(lo.x) || !isfinite(lo.y) || !isfinite(lo.z) 
+        ||!isfinite(hi.x) || !isfinite(hi.y) || !isfinite(hi.z) 
+        ||lo.x >= hi.x || lo.y >= hi.y || lo.z >= hi.z 
+        ||spawn.x < lo.x || spawn.x > hi.x || spawn.y < lo.y 
+        || spawn.y > hi.y || spawn.z < lo.z || spawn.z > hi.z)
+            return false;
+    }
 
     for (size_t i = 0; i < map->vertex_count; ++i) {
         Vector3 p = map->vertices[i];

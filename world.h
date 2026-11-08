@@ -4,16 +4,20 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include "entities.h"
-
+#include "game_config.h"
 #include "math/map_types.h"
+#include "physics.h"
 
 enum { WORLD_ENTITY_CAPACITY = 128 };
 
 typedef struct {
+    float gravity;
     MapData map;
     Entity entities[WORLD_ENTITY_CAPACITY];
     size_t entity_count;
     PlayerState player; // authoritative player; can be expanded
+    PlayerRules player_rules;
+    PhysicsMotion player_motion;
 } World;
 
 #ifdef __cplusplus
@@ -44,8 +48,7 @@ void world_tick(World *world, const PlayerCommand *command, double dt);
  * @return False if index is out of range.
  * @note Call between updates on the owning thread.
  */
-bool world_get_entity_state(const World *world, size_t index, EntityState *out
-);
+bool world_get_entity_state(const World *world, size_t index, EntityState *out);
 
 #ifdef __cplusplus
 }

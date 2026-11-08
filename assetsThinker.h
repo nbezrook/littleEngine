@@ -1,7 +1,8 @@
 #ifndef LITTLEENGINE_ASSETS_THINKER_H
 #define LITTLEENGINE_ASSETS_THINKER_H
 
-#include "renderer.h"
+#include "texture.h"
+#include "game_config.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -21,6 +22,10 @@ CPUTexture *texture_book_load_png(TextureBook *book, const char *path);
 bool texture_book_read_catalog(TextureBook *book, const char *path);
 
 const CPUTexture *texture_book_resolve(TextureBook *book, const char *name);
+/**
+ * @brief load config for game from 'game.json' in game root dir
+ */
+bool game_config_load_json(GameConfig *out, const char *path);
 
 #ifdef __cplusplus
 }

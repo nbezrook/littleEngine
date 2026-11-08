@@ -12,12 +12,6 @@ typedef struct {
     float near_clip;
 } Camera;
 
-typedef struct {
-    float *values;
-    int width;
-    int height;
-} DepthBuffer;
-
 // dancing with a little C 
 #ifdef __cplusplus
 extern "C" {
@@ -53,26 +47,7 @@ void camera_move(
  * A successful projection may lie outside the viewport. This does not clip triangles.
  */
 bool camera_project(const Camera *camera, Vector3 world, int width, int height, ProjectedVertex *out);
-/**
- * @brief Allocate uninitialized reciprocal-depth storage for width * height pixels.
- * @param buffer Non-null destination with no live allocation; zero-initialize before first use.
- * @param width Positive pixel width.
- * @param height Positive pixel height.
- * @return True on success; false for invalid dimensions, size overflow, or allocation failure.
- * On failure the destination is unchanged. Call depth_buffer_clear before drawing.
- * @note The buffer owns values; release it with depth_buffer_shutdown.
- */
-bool depth_buffer_init(DepthBuffer *buffer, int width, int height);
-/**
- * @brief Set every reciprocal-depth value to zero before rendering a new frame.
- * @param buffer Non-null initialized buffer. Larger positive values represent nearer pixels.
- */
-void depth_buffer_clear(DepthBuffer *buffer);
-/**
- * @brief Free the owned depth array and reset the structure; NULL is accepted.
- * @param buffer Initialized or zero-initialized buffer. The structure itself is not freed.
- */
-void depth_buffer_shutdown(DepthBuffer *buffer);
+
 /**
  * @brief Add angular displacement and clamp pitch to [-1.55, 1.55] radians.
  * @param camera Non-null camera to update.

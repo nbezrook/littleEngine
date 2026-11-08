@@ -7,11 +7,15 @@
 #include "camera.h"
 #include "inputThinker.h"
 #include "client.h"
+#include "game_config.h"
 
 enum { ENGINE_PATH_CAPACITY = 1024 };
 
 typedef struct {
     char game_directory[ENGINE_PATH_CAPACITY];
+
+    GameConfig config;
+
     EngineRenderer renderer;
     DebugConsole console;
 

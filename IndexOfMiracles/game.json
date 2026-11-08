@@ -8,10 +8,14 @@
     "half_width": 0.3,
     "height": 1.8,
     "eye_height": 1.6,
-    "max_pitch_degrees": 88.8
+    "max_pitch_degrees": 88.8,
+    "jump_speed": 4.5
   },
   "view_defaults": {
     "vertical_fov_degrees": 100.4,
     "near_clip": 0.1
+  },
+  "physics": {
+  "gravity": 9.81
   }
 }
