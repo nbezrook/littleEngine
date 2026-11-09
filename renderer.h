@@ -9,7 +9,7 @@
 #include "render_types.h"
 #include "framebuffer.h"
 #include "lighting.h"
-#include "shadow_scene.h"
+#include "shadow_maps.h"
 
 typedef struct {
     SDL_Window *window;
@@ -19,7 +19,7 @@ typedef struct {
 
     RenderScratch scratch;
     LightingLUT lighting_lut;
-    ShadowScene *shadow_scene; /* Renderer-owned startup cache. */
+    ShadowMaps *shadow_maps; // renderer handles persistent depth cubemaps
     FrameBuffer framebuffer;
 } EngineRenderer;
 
@@ -28,13 +28,13 @@ typedef struct {
     #endif
 
     /**
-     * @brief Initialize SDL video and create the window, renderer, streaming image, and depth buffer.
+     * @brief Create presentation resources, framebuffer, and persistent point-light shadow maps.
      * @param renderer Non-null destination with pointer fields initially zero and no live resources.
      * @param title Window title string.
      * @param width Positive framebuffer width in pixels.
      * @param height Positive framebuffer height in pixels.
-     * @return True on success; false on SDL or depth-buffer failure.
-     * @note Main thread only. Some early SDL failure paths currently leave resources allocated.
+     * @return True on success; false on allocation, framebuffer, or SDL failure.
+     * @note Main thread only; partial initialization is cleaned up on failure.
      */
     bool renderer_init(
         EngineRenderer *renderer,
@@ -44,15 +44,15 @@ typedef struct {
     );
 
 
-
     /**
-     * @brief Clear and rasterize one object, draw its texture preview, and present the image.
+     * @brief Rebuild enabled point-light shadow maps, shade the scene, and present it.
      * @param renderer Non-null initialized renderer, used on the main thread.
      * @param objects Objects retrieved from server snapshot.
      * @param object_count Self-explanatory
      * @param camera Non-null camera used for projection.
-     * @note CPU rasterization uses pitch-aware rows and a depth buffer cleared once per frame.
-     * There is no triangle near-plane clipping; an unprojectable vertex rejects the mesh.
+     * @note Inputs remain immutable during the synchronous call. Maps and scratch
+     * have exclusive renderer access. No per-frame allocation. Unsupported
+     * shadow-casting light types fail map generation and are logged here.
      */
     void render_frame(EngineRenderer *renderer, const SceneObject *objects, size_t object_count, const Camera *camera, const SceneLighting *lighting);
 

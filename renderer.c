@@ -10,11 +10,13 @@ bool renderer_init(EngineRenderer *renderer, const char *title, int width, int h
         SDL_Log("%s", SDL_GetError());
         return false;
     }
-    renderer->shadow_scene=shadow_scene_create(SHADOW_TRIANGLE_CAPACITY);
-    if (!renderer->shadow_scene) {
-        SDL_SetError("Shadow scene allocation failed.");
+    // good candidate for delegating to job; renderer needs to have way to lock and unlock
+    renderer->shadow_maps=shadow_maps_create(SCENE_LIGHT_CAPACITY,256,0.01f);
+    if (!renderer->shadow_maps) {
+        SDL_SetError("Shadow-map allocation failed.");
         goto fail;
     }
+    
     if (!SDL_Init(SDL_INIT_VIDEO)) goto fail;
     renderer->video_initialized = true;
 
@@ -40,7 +42,7 @@ void renderer_shutdown(EngineRenderer *renderer)
     if (renderer->screen_texture) SDL_DestroyTexture(renderer->screen_texture);
     if (renderer->sdl_renderer) SDL_DestroyRenderer(renderer->sdl_renderer);
     if (renderer->window) SDL_DestroyWindow(renderer->window);
-    shadow_scene_destroy(renderer->shadow_scene);
+    shadow_maps_destroy(renderer->shadow_maps);
     framebuffer_shutdown(&renderer->framebuffer);
     if (renderer->video_initialized) SDL_Quit();
     *renderer = (EngineRenderer){0};
@@ -49,8 +51,8 @@ void renderer_shutdown(EngineRenderer *renderer)
 void render_frame(EngineRenderer *renderer, const SceneObject *objects,
     size_t object_count, const Camera *camera, const SceneLighting *lighting)
 {
-    if (!shadow_scene_build(renderer->shadow_scene,objects,object_count)) {
-        SDL_Log("Shadow scene exceeds its budget or contains invalid geometry.");
+    if (!shadow_maps_build(renderer->shadow_maps,&renderer->scratch,objects,object_count,lighting)) {
+        SDL_Log("Shadow-map build failed: invalid input, light budget, or unsupported shadowed light type.");
         return;
     }
     FrameBuffer *frame = &renderer->framebuffer;
@@ -61,7 +63,7 @@ void render_frame(EngineRenderer *renderer, const SceneObject *objects,
         .pitch = frame->pitch,
         .depth = &frame->depth
     };
-    if (!rasterizer_draw_scene(&target, &renderer->scratch, objects, object_count, camera, lighting, &renderer->lighting_lut, renderer->shadow_scene)) {
+    if (!rasterizer_draw_scene(&target, &renderer->scratch, objects, object_count, camera, lighting, &renderer->lighting_lut, renderer->shadow_maps)) {
         SDL_Log("CPU rasterizer rejected the target or scene geometry.");
         return;
     }

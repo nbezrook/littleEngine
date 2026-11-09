@@ -8,7 +8,7 @@
 #include "camera.h"
 #include "depth_buffer.h"
 #include "lighting.h"
-#include "shadow_scene.h"
+#include "shadow_maps.h"
 
 /** Borrowed output view; pixels contain XRGB8888 and pitch is bytes per row.
  * Color/depth storage must be separate, valid, and exclusively writable during drawing.
@@ -32,7 +32,18 @@ extern "C" {
  * Mesh arrays/indices and finite geometry must already have been validated by the caller.
  * Zero objects is allowed. No SDL calls, file I/O, logging, or allocation occur here.
  */
-bool rasterizer_draw_scene(RasterTarget *target, RenderScratch *scratch, const SceneObject *objects, size_t object_count, const Camera *camera, const SceneLighting *lighting, const LightingLUT *lut, const ShadowScene *shadows);
+bool rasterizer_draw_scene(RasterTarget *target, RenderScratch *scratch, const SceneObject *objects, size_t object_count, const Camera *camera, const SceneLighting *lighting, const LightingLUT *lut, const ShadowMaps *shadows);
+
+/** Clear and render opaque, two-sided scene depth from an arbitrary camera.
+ * Borrows depth storage and exclusive scratch; allocates nothing and calls no SDL.
+ * Stores reciprocal view-space Z: zero is empty, larger positive values are nearer.
+ * Textures, colours, UVs and lighting are ignored. Near clipping is performed;
+ * no far-plane clipping. All meshes/indices and transformed geometry must be valid
+ * and finite, as for rasterizer_draw_scene. Invalid target/camera returns false
+ * before clearing; rejected meshes can leave partial output. Zero objects allowed.
+ * Inputs stay immutable; depth/scratch must not be shared by concurrent writers. */
+bool rasterizer_draw_depth_scene(DepthBuffer *depth, RenderScratch *scratch,
+    const SceneObject *objects, size_t object_count, const Camera *camera);
 
 /** wireframe debug tightly packed pixels only; no depth testing. */
 bool draw_wireframe_mesh(uint32_t *pixels, int width, int height, WireframeMesh mesh, Vector3 rotation, uint32_t color, Vector3 position, const Camera *camera, RenderScratch *scratch);

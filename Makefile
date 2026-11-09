@@ -7,9 +7,9 @@ CC := gcc
 CXX := g++
 
 CPPFLAGS := -I./include
-CFLAGS := -Wall -Wextra -std=c11 -O2 -g
-CXXFLAGS := -Wall -Wextra -std=c++17 -O2 -g
-LDFLAGS := -mwindows
+CFLAGS := -Wall -Wextra -std=c11 -O3 -g -flto
+CXXFLAGS := -Wall -Wextra -std=c++17 -O3 -g -flto
+LDFLAGS := -mwindows -O3 -flto
 LDLIBS := SDL3.dll
 
 C_SOURCES := $(wildcard *.c math/*.c)

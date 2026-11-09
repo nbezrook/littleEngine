@@ -129,12 +129,12 @@ static RasterVertex make_raster_vertex(ProjectedVertex p, Point2 uv)
 typedef struct {
     const SceneLighting *scene;
     const LightingLUT *lut;
-    const ShadowScene *shadows;
+    const ShadowMaps *shadows;
     CameraPixelBasis basis;
 } LightingContext;
 
 static uint32_t shade_fragment(const LightingContext *context,uint32_t texel,
-                               Vector3 point,Vector3 normal,size_t object_index,size_t triangle_index)
+                               Vector3 point,Vector3 normal)
 {
     Vector3 total=context->scene->ambient;
     for (size_t i=0;i<context->scene->light_count;++i) {
@@ -143,9 +143,7 @@ static uint32_t shade_fragment(const LightingContext *context,uint32_t texel,
         if (!lighting_sample_light(light,point,normal,&sample)) continue;
         float visibility=1;
         if (light->casts_shadows && context->shadows) {
-            RaySegment ray;
-            if (lighting_shadow_ray(light,point,normal,context->scene->shadow_bias,&ray)
-                && shadow_scene_occluded(context->shadows,&ray,object_index,triangle_index))
+            if (shadow_maps_occluded(context->shadows,i,point,normal))
                 visibility=0;
         }
         total.x+=sample.irradiance.x*visibility;
@@ -155,7 +153,7 @@ static uint32_t shade_fragment(const LightingContext *context,uint32_t texel,
     return lighting_apply_rgb(texel,total,context->lut);
 }
 
-static void fill_triangle(uint32_t *pixels,DepthBuffer *depth,int width,int height,int pitch,RasterVertex a,RasterVertex b,RasterVertex c,uint32_t color,const CPUTexture *texture, const LightingContext *context, Vector3 normal, size_t object_index, size_t triangle_index)
+static void fill_triangle(uint32_t *pixels,DepthBuffer *depth,int width,int height,int pitch,RasterVertex a,RasterVertex b,RasterVertex c,uint32_t color,const CPUTexture *texture, const LightingContext *context, Vector3 normal)
 {   
     //incremental evaluation
     //calculate the three edge values at the first pixel center
@@ -213,7 +211,7 @@ static void fill_triangle(uint32_t *pixels,DepthBuffer *depth,int width,int heig
     float row_e2 = edge(c.screen, a.screen, first);
 
     for (int y = y0; y < y1; ++y) {
-        uint32_t *row = (uint32_t *)((uint8_t *)pixels + (size_t)y * pitch);
+        uint32_t *row = pixels ? (uint32_t *)((uint8_t *)pixels + (size_t)y * pitch) : NULL;
 
         float e0 = row_e0;
         float e1 = row_e1;
@@ -232,6 +230,9 @@ static void fill_triangle(uint32_t *pixels,DepthBuffer *depth,int width,int heig
                 size_t index = (size_t)y * depth->width + x;
                 if (q > depth->values[index]) {
                     depth->values[index] = q;
+                    /* A NULL private lighting context selects the depth-only pass.
+                     * Continue advances the pixel/edge values normally. */
+                    if (!context) continue;
                     float view_z=1.0f/q;
                     Vector3 point=camera_pixel_world(&context->basis,x+.5f,y+.5f,view_z);
                     uint32_t texel=color;
@@ -242,7 +243,7 @@ static void fill_triangle(uint32_t *pixels,DepthBuffer *depth,int width,int heig
                         float v = vq * view_z;
                         texel=texture_sample(texture,u,v);
                     }
-                    row[x]=shade_fragment(context,texel,point,normal,object_index,triangle_index);
+                    row[x]=shade_fragment(context,texel,point,normal);
                 } // depth test 
             }     // inside triangle 
         }         // x loop 
@@ -324,12 +325,13 @@ bool draw_wireframe_mesh(uint32_t *pixels, int screen_width, int screen_height,
  * @param depth Matching initialized depth buffer, cleared once before all frame objects.
  * @param texture Initialized texture, or NULL for solid color.
  * @return False for excessive/negative vertex count or any rejected vertex; true otherwise.
- * @note No backface culling or near-plane triangle clipping is performed.
+ * @note Near clipping is shared by both passes. The lit pass culls backfaces;
+ * the depth-only pass treats opaque casters as two-sided.
  */
 
 bool draw_mesh(uint32_t *pixels, int screen_width, int screen_height, 
     int pitch, WireframeMesh mesh, Vector3 rotation, uint32_t color,
-    Vector3 position, const Camera *camera, RenderScratch *scratch, DepthBuffer *depth,  const CPUTexture *texture, const LightingContext *context, size_t object_index) {
+    Vector3 position, const Camera *camera, RenderScratch *scratch, DepthBuffer *depth,  const CPUTexture *texture, const LightingContext *context) {
             
     // check vertex count against scratch buffer
     if (mesh.vertex_count < 0 || mesh.vertex_count > RENDER_VERTEX_CAPACITY) {
@@ -361,9 +363,15 @@ bool draw_mesh(uint32_t *pixels, int screen_width, int screen_height,
             Triangle triangle = mesh.triangles[i];
 
             // reject triangle if not front facing; rejected triangles skip clipping, projection, coverage tests, depth tests, and texture sampling
-            if (!triangle_is_front_facing(points[triangle.a],points[triangle.b],points[triangle.c])) {continue;}
+            /* Opaque shadow casters are two-sided, matching our ray reference.
+             * Keep the existing backface culling for the lit camera pass. */
+            if (context && !triangle_is_front_facing(points[triangle.a],points[triangle.b],points[triangle.c])) {continue;}
 
-            ClipVertex input[3] = {{points[triangle.a], triangle.uv_a},{points[triangle.b], triangle.uv_b},{points[triangle.c], triangle.uv_c}};
+            Point2 zero_uv={0};
+            ClipVertex input[3] = {
+                {points[triangle.a], context ? triangle.uv_a : zero_uv},
+                {points[triangle.b], context ? triangle.uv_b : zero_uv},
+                {points[triangle.c], context ? triangle.uv_c : zero_uv}};
             ClipVertex clipped[4];
 
             int count = clip_triangle_near(input, camera->near_clip, clipped);
@@ -375,29 +383,29 @@ bool draw_mesh(uint32_t *pixels, int screen_width, int screen_height,
 
             for (int j = 0; j < count; ++j) {
                 ProjectedVertex projected;
-
                 if (!camera_project_view(camera, clipped[j].position, screen_width, screen_height, &projected)) {
                     valid = false;
                     break;
                 }
-
                 vertices[j] = make_raster_vertex(projected, clipped[j].uv);
             }
 
             if (!valid) continue;
 
             // triangle normal. clipped fan triangles share it
-            Vector3 normal;
-            if (!triangle_unit_normal(mesh.vertices[triangle.a], mesh.vertices[triangle.b],
-                                       mesh.vertices[triangle.c], &normal))
-                continue;
-            // rotations match the vertex transform translation never rotates normals 
-            normal = vec3_rotate_y(normal, rotation.y);
-            normal = vec3_rotate_x(normal, rotation.x);
-            normal = vec3_rotate_z(normal, rotation.z);
+            Vector3 normal={0};
+            if (context) {
+                if (!triangle_unit_normal(mesh.vertices[triangle.a], mesh.vertices[triangle.b],
+                                          mesh.vertices[triangle.c], &normal))
+                    continue;
+                // Rotations match the vertex transform; translation never rotates normals.
+                normal = vec3_rotate_y(normal, rotation.y);
+                normal = vec3_rotate_x(normal, rotation.x);
+                normal = vec3_rotate_z(normal, rotation.z);
+            }
 
             for (int j = 1; j < count - 1; ++j) {
-                fill_triangle(pixels,depth,screen_width,screen_height,pitch,vertices[0],vertices[j], vertices[j + 1],color, texture, context, normal, object_index, (size_t)i);
+                fill_triangle(pixels,depth,screen_width,screen_height,pitch,vertices[0],vertices[j], vertices[j + 1],color, texture, context, normal);
             }
         }
 
@@ -412,13 +420,12 @@ draws the scene’s objects using the supplied scratch storage.
 returns success or failure.
 
 
-raycast.h/c	        two-sided ray–triangle intersection
-shadow_scene.h/c	own and query transformed scene triangles
-lighting.h/c	    evaluate lights and construct shadow rays
+shadow_maps.h/c      own light depth cubemaps and query visibility
+lighting.h/c         evaluate additive light contributions
  */
 
 bool rasterizer_draw_scene(RasterTarget *target, RenderScratch *scratch,
-    const SceneObject *objects, size_t object_count, const Camera *camera, const SceneLighting *lighting, const LightingLUT *lut, const ShadowScene *shadows)
+    const SceneObject *objects, size_t object_count, const Camera *camera, const SceneLighting *lighting, const LightingLUT *lut, const ShadowMaps *shadows)
 {
     //big list of things to skip in rendering; better to make something else reason about this
     if (!target || !scratch || !camera || !lut || !lighting_validate(lighting) || (object_count && !objects) ||!target->pixels || !target->depth || !target->depth->values 
@@ -438,8 +445,26 @@ bool rasterizer_draw_scene(RasterTarget *target, RenderScratch *scratch,
     depth_buffer_clear(target->depth);
     for (size_t i = 0; i < object_count; ++i) {
         const SceneObject *object = &objects[i];
-        if (!object->mesh || !draw_mesh(target->pixels, target->width, target->height, target->pitch, *object->mesh, object->rotation, object->color, object->position, camera, scratch, target->depth, object->texture, &context, i))
+        if (!object->mesh || !draw_mesh(target->pixels, target->width, target->height, target->pitch, *object->mesh, object->rotation, object->color, object->position, camera, scratch, target->depth, object->texture, &context))
             return false;
+    }
+    return true;
+}
+// faster than ray tracing
+bool rasterizer_draw_depth_scene(DepthBuffer *depth, RenderScratch *scratch,
+    const SceneObject *objects, size_t object_count, const Camera *camera)
+{
+    if (!depth || !depth->values || !scratch || !camera
+        || depth->width<=0 || depth->height<=0
+        || depth->width>INT_MAX/2 || depth->height>INT_MAX/2
+        || (object_count && !objects)
+        || !isfinite(camera->near_clip) || camera->near_clip<=0) return false;
+    CameraPixelBasis validation;
+    if (!camera_build_pixel_basis(&validation,camera,depth->width,depth->height)) return false;
+    depth_buffer_clear(depth);
+    for(size_t i=0;i<object_count;++i) {
+        const SceneObject *object=&objects[i];
+        if (!object->mesh || !draw_mesh(NULL,depth->width,depth->height,0, *object->mesh,object->rotation,0,object->position,camera,scratch,depth, NULL,NULL)) return false;
     }
     return true;
 }
