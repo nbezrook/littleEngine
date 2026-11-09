@@ -7,10 +7,14 @@ CC := gcc
 CXX := g++
 
 CPPFLAGS := -I./include
-CFLAGS := -Wall -Wextra -std=c11 -O3 -g -flto
+#CFLAGS := -Wall -Wextra -std=c11 -O3 -g -flto
 CXXFLAGS := -Wall -Wextra -std=c++17 -O3 -g -flto
-LDFLAGS := -mwindows -O3 -flto
+#LDFLAGS := -mwindows -O3 -flto
 LDLIBS := SDL3.dll
+
+#optimizations
+CFLAGS = -Wall -Wextra -std=c11 -O3 -g -flto -march=native -ffast-math -DNDEBUG
+LDFLAGS := -mwindows -O3 -flto -march=native
 
 C_SOURCES := $(wildcard *.c math/*.c)
 CXX_SOURCES := $(wildcard *.cpp math/*.cpp)
