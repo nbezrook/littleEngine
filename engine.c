@@ -69,14 +69,32 @@ bool engine_init(Engine *engine, int width, int height, const char *game_directo
     SDL_Log("Game config: %u Hz, walk speed %.2f m/s", engine->config.tick_hz, engine->config.player.walk_speed);
     server_init(&engine->server, &engine->config.player, engine->config.gravity);
 
+    char map_path[ENGINE_PATH_CAPACITY];
+    BoxRoomDefinition room;
+
+    if (!engine_asset_path(engine, engine->config.start_map, map_path, sizeof map_path) || !box_room_definition_load_json(&room, map_path)) {
+        SDL_Log("Map source loading failed.");
+        debug_console_shutdown(&engine->console);
+        return false;
+    }
+
+    SDL_Log("Loaded room description: floor %.1f, ceiling %.1f", room.bounds.min.y, room.bounds.max.y);
     //use game_config
     engine->camera = (Camera){
         .focal_length_pixels = 0.5f * (float)height / tanf(0.5f * engine->config.vertical_fov_radians),
         .near_clip = engine->config.near_clip
     };
 
-    if (!server_load_test_map(&engine->server)) {
-        SDL_Log("Test map creation failed.");
+    MapData compiled_map;
+
+    if (!map_compile_box_room(&compiled_map, &room)) {
+        SDL_Log("Room geometry compilation failed.");
+        debug_console_shutdown(&engine->console);
+        return false;
+    }
+
+    if (!server_install_map(&engine->server, &compiled_map)) {
+        SDL_Log("Server rejected the compiled map.");
         debug_console_shutdown(&engine->console);
         return false;
     }
@@ -115,6 +133,7 @@ bool engine_init(Engine *engine, int width, int height, const char *game_directo
     }
 
     texture_make_checker(checker);
+    checker->repeat = true;
 
     engine->textures.fallback = checker;
     char catalog_path[ENGINE_PATH_CAPACITY];
@@ -133,6 +152,26 @@ bool engine_init(Engine *engine, int width, int height, const char *game_directo
         image = checker;
     }
 
+    // init materials
+
+    char material_path[ENGINE_PATH_CAPACITY];
+
+    if (!engine_asset_path(engine, "materials.json",material_path, sizeof material_path)) {
+        SDL_Log("Material catalog path is invalid.");
+        engine_shutdown(engine);
+        return false;
+    }
+
+    engine->materials = material_book_load_json(material_path);
+
+    if (!engine->materials) {
+        SDL_Log("Material catalog initialization failed.");
+        engine_shutdown(engine);
+        return false;
+    }
+
+    SDL_Log("Loaded %u materials.", (unsigned)material_book_count(engine->materials));
+
     // initiate client
     client_init(&engine->client, &cube_mesh, image, engine->config.player.max_pitch_radians, engine->config.player.eye_height);
     
@@ -142,7 +181,7 @@ bool engine_init(Engine *engine, int width, int height, const char *game_directo
 
     MapData map;
 
-    if (!server_copy_map(&engine->server, &map) || !client_receive_map(&engine->client,&map,&engine->textures)) {
+    if (!server_copy_map(&engine->server, &map) || !client_receive_map(&engine->client,&map,&engine->textures, engine->materials)) {
         SDL_Log("Map transfer to Client failed.");
         engine_shutdown(engine);
         return false;
@@ -225,6 +264,8 @@ bool engine_frame(Engine *engine) {
 }
 
 void engine_shutdown(Engine *engine) {
+    material_book_destroy(engine->materials);
+    engine->materials = NULL;
     input_shutdown(&engine->input);
     texture_book_shutdown(&engine->textures);
     debug_console_shutdown(&engine->console);

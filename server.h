@@ -81,6 +81,15 @@ bool server_copy_map(const Server *server, MapData *out);
  */
 void server_init(Server *server, const PlayerRules *rules, float gravity);
 
+/**
+ * Validate and copy a map into World, then spawn the player.
+ * No allocation. Failure leaves Server unchanged.
+ * Startup operation, before Client receives the map.
+ */
+bool server_install_map(Server *server, const MapData *map);
+
+
+
 #ifdef __cplusplus
 }
 #endif

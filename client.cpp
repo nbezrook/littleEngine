@@ -3,6 +3,8 @@
 #include <cstring>
 #include "assetsThinker.h"
 #include <cmath>
+#include "render_types.h"
+#include "camera.h"
 
 void client_sample_input(Client *client, InputThinker *input)
 {
@@ -73,12 +75,13 @@ bool client_receive_snapshot(Client *client, const ServerSnapshot *snapshot)
     return true;
 }
 
-bool client_receive_map(Client *client, const MapData *map, TextureBook *textures)
+bool client_receive_map(Client *client, const MapData *map, TextureBook *textures, const MaterialBook *materials)
 {
     // if no textures, no fallback, failed validation, too many vertices on map, or mismatch of object count
     if (!textures || !textures->fallback || !map_validate(map) || map->vertex_count > RENDER_VERTEX_CAPACITY || client->object_count != client->map_object_count) {
         return false;
     }
+    
     client->map = *map;
 
     for (size_t i = 0; i < client->map.surface_count; ++i) {
@@ -98,9 +101,20 @@ bool client_receive_map(Client *client, const MapData *map, TextureBook *texture
         object = SceneObject{};
         //hardcoded values to be abstracted away later
         object.mesh = &mesh;
-        object.texture = texture_book_resolve(textures, surface.texture_name);
+
+        const MaterialDefinition *material = material_book_find(materials, surface.material_name);
+
+        if (material) {
+            object.texture = texture_book_resolve(textures, material->albedo_texture);
+        } else {
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,"Unknown material '%s'; using checker.",surface.material_name);
+            object.texture = textures->fallback;
+        }
+        
         object.color = 0x00808080;
     }
+
+
 
     client->map_object_count = client->map.surface_count;
     client->object_count = client->map_object_count;

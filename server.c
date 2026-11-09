@@ -67,27 +67,44 @@ bool server_build_snapshot(const Server *server, ServerSnapshot *out)
     return true;
 }
 
+bool server_install_map(Server *server, const MapData *map)
+{
+    if (!server || !map_validate(map) || !map->has_room_bounds)
+        return false;
+
+    const PlayerRules *rules = &server->world.player_rules;
+
+    Vector3 lo = map->room_bounds.min;
+    Vector3 hi = map->room_bounds.max;
+    Vector3 spawn = map->player_spawn;
+
+    float r = rules->half_width;
+    float h = rules->height;
+
+
+    if (!isfinite(r) || !isfinite(h) || r <= 0.0f || h <= 0.0f
+        || r > (hi.x - lo.x) * 0.5f
+        || r > (hi.z - lo.z) * 0.5f
+        || h > hi.y - lo.y
+        || spawn.x < lo.x + r || spawn.x > hi.x - r
+        || spawn.z < lo.z + r || spawn.z > hi.z - r
+        || spawn.y < lo.y || spawn.y > hi.y - h)
+        return false;
+
+    server->world.map = *map;
+    server_spawn_player(server, spawn);
+
+    return true;
+}
+
 bool server_load_test_map(Server *server)
 {
     MapData map;
-    if (!map_make_test_room(&map) || !map.has_room_bounds) return false;
 
-    const PlayerRules *rules = &server->world.player_rules;
-    Vector3 lo = map.room_bounds.min;
-    Vector3 hi = map.room_bounds.max;
-    Vector3 spawn = map.player_spawn;
-    float r = rules->half_width;
-    float h = rules->height;
-    if (!isfinite(r) || !isfinite(h) || r <= 0.0f || h <= 0.0f 
-    || r > (hi.x - lo.x) * 0.5f || r > (hi.z - lo.z) * 0.5f 
-    || h > hi.y - lo.y || spawn.x < lo.x + r || spawn.x > hi.x - r 
-    || spawn.z < lo.z + r || spawn.z > hi.z - r || spawn.y < lo.y 
-    || spawn.y > hi.y - h)
+    if (!map_make_test_room(&map))
         return false;
 
-    server->world.map = map;
-    server_spawn_player(server, map.player_spawn);
-    return true;
+    return server_install_map(server, &map);
 }
 
 bool server_copy_map(const Server *server, MapData *out)
@@ -104,4 +121,5 @@ void server_init(Server *server, const PlayerRules *rules, float gravity)
     *server = (Server){0};
     server->world.player_rules = *rules;
     server->world.gravity = gravity;
+
 }

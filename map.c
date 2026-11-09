@@ -7,7 +7,7 @@
 _Static_assert(MAP_VERTEX_CAPACITY >= 8, "Room needs eight vertices; check Map");
 _Static_assert(MAP_TRIANGLE_CAPACITY >= 12, "Room needs twelve triangles; check Map");
 _Static_assert(MAP_SURFACE_CAPACITY >= 6, "Room needs six surfaces; check Map");
-_Static_assert(MAP_TEXTURE_NAME_BYTES >= sizeof("stone_wall"),"Texture name must fit; check Map");
+_Static_assert(MAP_MATERIAL_NAME_BYTES >= sizeof("stone_wall"),"Texture name must fit; check Map");
 
 
 
@@ -60,7 +60,7 @@ bool map_make_test_room(MapData *out)
         result.surfaces[i] = (MapSurface){
             .first_triangle = i * 2,
             .triangle_count = 2,
-            .texture_name = "stone_wall"
+            .material_name = "rough_stone"
         };
         for (size_t j = 0; j < 2; ++j) {
             Triangle *triangle = &result.triangles[i * 2 + j];
@@ -122,7 +122,7 @@ bool map_validate(const MapData *map)
         const MapSurface *surface = &map->surfaces[i];
         if (surface->first_triangle > map->triangle_count || surface->triangle_count == 0 
             || surface->triangle_count > map->triangle_count - surface->first_triangle 
-            || !memchr(surface->texture_name, '\0', sizeof surface->texture_name))
+            || !memchr(surface->material_name, '\0', sizeof surface->material_name))
             return false;
     }
     return true;

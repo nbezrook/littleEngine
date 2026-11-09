@@ -58,6 +58,22 @@ bool game_config_load_json(GameConfig *out, const char *path)
             throw std::runtime_error("tick_hz must be an integer from 1 to 240");
 
         GameConfig result{};
+
+        const auto &field = document.at("start_map");
+
+        if (!field.is_string())
+            throw std::runtime_error("start_map must be a string");
+
+        const auto &name = field.get_ref<const std::string &>();
+
+        if (name.empty() || name.size() >= sizeof(result.start_map) || name.find('\0') != std::string::npos)
+            throw std::runtime_error("Invalid start_map");
+
+        std::memcpy(result.start_map, name.data(), name.size());
+        result.start_map[name.size()] = '\0';
+
+
+
         result.tick_hz = tick.get<unsigned>();
 
         const auto &player = document.at("player");

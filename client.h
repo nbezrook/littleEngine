@@ -2,11 +2,13 @@
 #define LITTLEENGINE_CLIENT_H
 
 #include "game_protocol.h"
-#include "renderer.h"
 #include "math/map_types.h"
 #include "inputThinker.h"
 
+#include "render_types.h"
+#include "camera.h"
 
+#include "material.h"
 
 typedef struct {
     size_t object_count;
@@ -55,9 +57,10 @@ bool client_receive_snapshot(Client *client, const ServerSnapshot *snapshot);
  * @param client Non-null initialized client.
  * @param map Non-null and initialized map.
  * @param textures TextureBook from which to retrieve and resolve textures
+ * @param materials ditto for materials
  * @return False for inability to receive map from Server
  */
-bool client_receive_map(Client *client, const MapData *map, TextureBook *textures);
+bool client_receive_map(Client *client,const MapData *map,TextureBook *textures,const MaterialBook *materials);
 
 
 /** Sample held movement and consume mouse deltas once per display frame.

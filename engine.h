@@ -9,6 +9,10 @@
 #include "client.h"
 #include "game_config.h"
 
+#include "map_source.h"
+
+#include "material.h"
+
 enum { ENGINE_PATH_CAPACITY = 1024 };
 
 typedef struct {
@@ -29,6 +33,7 @@ typedef struct {
     Server server;
     Client client;
     TextureBook textures;
+    MaterialBook *materials;
 } Engine;
 
 #ifdef __cplusplus

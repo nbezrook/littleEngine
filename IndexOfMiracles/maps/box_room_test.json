@@ -1,0 +1,64 @@
+{
+  "version": 2,
+  "player_spawn": [
+    0,
+    -2,
+    -4
+  ],
+  "rooms": [
+    {
+      "min": [
+        -6,
+        -2,
+        -8
+      ],
+      "max": [
+        6,
+        3,
+        8
+      ],
+      "walls": {
+        "material": "rough_stone",
+        "mapping": {
+          "metres_per_repeat": [
+            2,
+            2
+          ],
+          "offset": [
+            0,
+            0
+          ],
+          "rotation_degrees": 0
+        }
+      },
+      "floor": {
+        "material": "polished_stone",
+        "mapping": {
+          "metres_per_repeat": [
+            2,
+            2
+          ],
+          "offset": [
+            0,
+            0
+          ],
+          "rotation_degrees": 0
+        }
+      },
+      "ceiling": {
+        "material": "hildescheim_ceiling",
+        "mapping": {
+          "metres_per_repeat": [
+            4,
+            4
+          ],
+          "offset": [
+            0,
+            0
+          ],
+          "rotation_degrees": 0
+        }
+      }
+    }
+  ]
+}

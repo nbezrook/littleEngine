@@ -9,7 +9,7 @@ enum {
     MAP_VERTEX_CAPACITY = 128,
     MAP_TRIANGLE_CAPACITY = 256,
     MAP_SURFACE_CAPACITY = 16,
-    MAP_TEXTURE_NAME_BYTES = 64
+    MAP_MATERIAL_NAME_BYTES = 64
 };
 
 /**
@@ -26,7 +26,7 @@ typedef struct {
 typedef struct {
     size_t first_triangle;
     size_t triangle_count;
-    char texture_name[MAP_TEXTURE_NAME_BYTES];
+    char material_name[MAP_MATERIAL_NAME_BYTES];
 } MapSurface;
 
 /**

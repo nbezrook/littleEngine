@@ -1,6 +1,11 @@
 #ifndef LITTLEENGINE_GAME_CONFIG_H
 #define LITTLEENGINE_GAME_CONFIG_H
 
+enum {
+    GAME_MAP_PATH_BYTES = 256 
+};
+
+
 typedef struct {
     float walk_speed;          // meters p sec
     float half_width;          // meters
@@ -16,6 +21,8 @@ typedef struct {
     float vertical_fov_radians;
     float near_clip;           // meters
     float gravity;
+
+    char start_map[GAME_MAP_PATH_BYTES];
 } GameConfig;
 
 #endif

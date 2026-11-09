@@ -1,0 +1,16 @@
+{
+  "materials": [
+    {
+      "name": "rough_stone",
+      "albedo_texture": "stone_wall"
+    },
+    {
+      "name": "polished_stone",
+      "albedo_texture": "stone_floor"
+    },
+    {
+      "name": "hildescheim_ceiling",
+      "albedo_texture": "hildescheim"
+    }
+  ]
+}

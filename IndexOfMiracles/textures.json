@@ -8,6 +8,16 @@
     {
       "name": "face",
       "filename": "tex/FACE.png"
+    },
+    {
+      "name": "hildescheim",
+      "filename": "tex/HILDESCHEIM.png",
+      "repeat": true
+    },
+    {
+      "name": "stone_floor",
+      "filename": "tex/STONE_FLOOR.png",
+      "repeat": true
     }
   ]
 }

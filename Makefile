@@ -1,14 +1,43 @@
-CC = gcc
-CXX = g++
+SHELL := cmd.exe
+.SHELLFLAGS := /c
+.DEFAULT_GOAL := all
+.DELETE_ON_ERROR:
 
-CFLAGS = -Wall -Wextra -std=c11 -O2 -g -I./include
-CXXFLAGS = -Wall -Wextra -std=c++17 -g -O2 -I./include
+CC := gcc
+CXX := g++
 
-.PHONY: all clean
+CPPFLAGS := -I./include
+CFLAGS := -Wall -Wextra -std=c11 -O2 -g
+CXXFLAGS := -Wall -Wextra -std=c++17 -O2 -g
+LDFLAGS := -mwindows
+LDLIBS := SDL3.dll
 
-all:
-	$(CC) $(CFLAGS) -c math/math.c engine.c texture.c renderer.c depth_buffer.c console.c entities.c math/primitives.c camera.c clipping.c world.c server.c map.c physics.c
-	$(CXX) $(CXXFLAGS) -c main.cpp assetsThinker.cpp inputThinker.cpp client.cpp 
-	$(CXX) main.o math.o engine.o renderer.o depth_buffer.o texture.o console.o entities.o map.o primitives.o world.o camera.o assetsThinker.o inputThinker.o server.o clipping.o client.o physics.o SDL3.dll -o engine.exe -mwindows
+C_SOURCES := $(wildcard *.c math/*.c)
+CXX_SOURCES := $(wildcard *.cpp math/*.cpp)
+
+OBJECTS := $(addprefix build/,$(addsuffix .o,$(C_SOURCES) $(CXX_SOURCES)))
+DEPS := $(OBJECTS:.o=.d)
+OBJECT_DIRS := $(sort $(dir $(OBJECTS)))
+
+.PHONY: all clean prepare
+all: engine.exe
+
+engine.exe: $(OBJECTS) SDL3.dll Makefile
+	$(CXX) $(LDFLAGS) $(OBJECTS) $(LDLIBS) -o "$@"
+
+prepare:
+	@for %%D in ($(subst /,\,$(OBJECT_DIRS))) do @if not exist "%%D" mkdir "%%D"
+
+$(OBJECTS): Makefile | prepare
+
+build/%.c.o: %.c
+	$(CC) $(CPPFLAGS) $(CFLAGS) -MMD -MP -c "$<" -o "$@"
+
+build/%.cpp.o: %.cpp
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -MMD -MP -c "$<" -o "$@"
+
 clean:
-	del main.o math.o engine.o client.o depth_buffer.o renderer.o texture.o console.o map.o entities.o primitives.o world.o camera.o assetsThinker.o inputThinker.o clipping.o server.o physics.o engine.exe
+	@if exist build rmdir /s /q build
+	@if exist engine.exe del /q engine.exe
+
+-include $(DEPS)
