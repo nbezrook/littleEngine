@@ -4,6 +4,7 @@
 #include <stdbool.h>
 #include "math_types.h"
 #include <stddef.h>
+#include "../lighting_types.h"
 
 enum {
     MAP_VERTEX_CAPACITY = 128,
@@ -46,6 +47,8 @@ typedef struct {
     bool has_room_bounds;
     RoomBounds room_bounds;
     Vector3 player_spawn;
+
+    SceneLighting lighting;
 } MapData;
 
 #endif

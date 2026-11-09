@@ -7,6 +7,7 @@
 #include <limits.h>
 #include <math.h>
 
+#include "lighting.h"
 
 static uint32_t read_u32_le(const uint8_t *p)
 {
@@ -102,6 +103,9 @@ bool map_file_decode(MapData *out, const uint8_t *bytes, size_t size)
         return false;
 
     MapData result = {0};
+
+    result.lighting = lighting_default_unlit();
+
     result.vertex_count = header.vertex_count;
     result.triangle_count = header.triangle_count;
     result.surface_count = header.surface_count;

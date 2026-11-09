@@ -2,6 +2,7 @@
 #include "map.h"
 #include <math.h>
 #include <string.h>
+#include "lighting.h"
 
 _Static_assert(MAP_VERTEX_CAPACITY >= 8, "Box room needs eight vertices");
 _Static_assert(MAP_TRIANGLE_CAPACITY >= 12, "Box room needs twelve triangles");
@@ -61,6 +62,10 @@ bool map_compile_box_room(MapData *out, const BoxRoomDefinition *source)
     result.has_room_bounds = true;
     result.room_bounds = source->bounds;
     result.player_spawn = source->player_spawn;
+
+    //light spawn
+    if (!lighting_prepare(&result.lighting, &source->lighting))
+    return false;
 
     result.vertices[0] = (Vector3){lo.x, lo.y, lo.z};
     result.vertices[1] = (Vector3){hi.x, lo.y, lo.z};

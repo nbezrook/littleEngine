@@ -4,10 +4,16 @@
 bool renderer_init(EngineRenderer *renderer, const char *title, int width, int height)
 {
     *renderer = (EngineRenderer){0};
+    if (!lighting_lut_init(&renderer->lighting_lut)) return false;
     if (!framebuffer_init(&renderer->framebuffer, width, height)) {
         SDL_SetError("CPU framebuffer initialization failed (%d x %d).", width, height);
         SDL_Log("%s", SDL_GetError());
         return false;
+    }
+    renderer->shadow_scene=shadow_scene_create(SHADOW_TRIANGLE_CAPACITY);
+    if (!renderer->shadow_scene) {
+        SDL_SetError("Shadow scene allocation failed.");
+        goto fail;
     }
     if (!SDL_Init(SDL_INIT_VIDEO)) goto fail;
     renderer->video_initialized = true;
@@ -16,8 +22,7 @@ bool renderer_init(EngineRenderer *renderer, const char *title, int width, int h
     if (!renderer->window) goto fail;
     renderer->sdl_renderer = SDL_CreateRenderer(renderer->window, NULL);
     if (!renderer->sdl_renderer) goto fail;
-    renderer->screen_texture = SDL_CreateTexture(renderer->sdl_renderer,
-        SDL_PIXELFORMAT_XRGB8888, SDL_TEXTUREACCESS_STREAMING, width, height);
+    renderer->screen_texture = SDL_CreateTexture(renderer->sdl_renderer, SDL_PIXELFORMAT_XRGB8888, SDL_TEXTUREACCESS_STREAMING, width, height);
     if (!renderer->screen_texture) goto fail;
 
     SDL_Log("littleEngine renderer initialized: %d by %d", width, height);
@@ -35,14 +40,19 @@ void renderer_shutdown(EngineRenderer *renderer)
     if (renderer->screen_texture) SDL_DestroyTexture(renderer->screen_texture);
     if (renderer->sdl_renderer) SDL_DestroyRenderer(renderer->sdl_renderer);
     if (renderer->window) SDL_DestroyWindow(renderer->window);
+    shadow_scene_destroy(renderer->shadow_scene);
     framebuffer_shutdown(&renderer->framebuffer);
     if (renderer->video_initialized) SDL_Quit();
     *renderer = (EngineRenderer){0};
 }
 
 void render_frame(EngineRenderer *renderer, const SceneObject *objects,
-    size_t object_count, const Camera *camera)
+    size_t object_count, const Camera *camera, const SceneLighting *lighting)
 {
+    if (!shadow_scene_build(renderer->shadow_scene,objects,object_count)) {
+        SDL_Log("Shadow scene exceeds its budget or contains invalid geometry.");
+        return;
+    }
     FrameBuffer *frame = &renderer->framebuffer;
     RasterTarget target = {
         .pixels = frame->pixels,
@@ -51,7 +61,7 @@ void render_frame(EngineRenderer *renderer, const SceneObject *objects,
         .pitch = frame->pitch,
         .depth = &frame->depth
     };
-    if (!rasterizer_draw_scene(&target, &renderer->scratch, objects, object_count, camera)) {
+    if (!rasterizer_draw_scene(&target, &renderer->scratch, objects, object_count, camera, lighting, &renderer->lighting_lut, renderer->shadow_scene)) {
         SDL_Log("CPU rasterizer rejected the target or scene geometry.");
         return;
     }

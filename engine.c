@@ -252,7 +252,8 @@ bool engine_frame(Engine *engine) {
         &engine->renderer,
         engine->client.objects,
         engine->client.object_count,
-        &engine->camera
+        &engine->camera,
+        &engine->client.map.lighting
     );
 
     if (!(SDL_GetWindowFlags(engine->console.window)

@@ -8,6 +8,8 @@
 #include "depth_buffer.h"
 #include "render_types.h"
 #include "framebuffer.h"
+#include "lighting.h"
+#include "shadow_scene.h"
 
 typedef struct {
     SDL_Window *window;
@@ -16,6 +18,8 @@ typedef struct {
     bool video_initialized;
 
     RenderScratch scratch;
+    LightingLUT lighting_lut;
+    ShadowScene *shadow_scene; /* Renderer-owned startup cache. */
     FrameBuffer framebuffer;
 } EngineRenderer;
 
@@ -50,7 +54,7 @@ typedef struct {
      * @note CPU rasterization uses pitch-aware rows and a depth buffer cleared once per frame.
      * There is no triangle near-plane clipping; an unprojectable vertex rejects the mesh.
      */
-    void render_frame(EngineRenderer *renderer, const SceneObject *objects, size_t object_count, const Camera *camera);
+    void render_frame(EngineRenderer *renderer, const SceneObject *objects, size_t object_count, const Camera *camera, const SceneLighting *lighting);
 
     /**
      * @brief Free depth storage, destroy SDL rendering resources, and call SDL_Quit.

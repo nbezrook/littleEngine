@@ -126,7 +126,36 @@ static RasterVertex make_raster_vertex(ProjectedVertex p, Point2 uv)
  * @note Either winding is accepted; zero-area triangles are skipped. Larger 1/Z wins.
  * UVs are recovered from interpolated u/Z and v/Z; no allocation or geometric clipping occurs.
  */
-static void fill_triangle(uint32_t *pixels,DepthBuffer *depth,int width,int height,int pitch,RasterVertex a,RasterVertex b,RasterVertex c,uint32_t color,const CPUTexture *texture)
+typedef struct {
+    const SceneLighting *scene;
+    const LightingLUT *lut;
+    const ShadowScene *shadows;
+    CameraPixelBasis basis;
+} LightingContext;
+
+static uint32_t shade_fragment(const LightingContext *context,uint32_t texel,
+                               Vector3 point,Vector3 normal,size_t object_index,size_t triangle_index)
+{
+    Vector3 total=context->scene->ambient;
+    for (size_t i=0;i<context->scene->light_count;++i) {
+        const Light *light=&context->scene->lights[i];
+        LightSample sample;
+        if (!lighting_sample_light(light,point,normal,&sample)) continue;
+        float visibility=1;
+        if (light->casts_shadows && context->shadows) {
+            RaySegment ray;
+            if (lighting_shadow_ray(light,point,normal,context->scene->shadow_bias,&ray)
+                && shadow_scene_occluded(context->shadows,&ray,object_index,triangle_index))
+                visibility=0;
+        }
+        total.x+=sample.irradiance.x*visibility;
+        total.y+=sample.irradiance.y*visibility;
+        total.z+=sample.irradiance.z*visibility;
+    }
+    return lighting_apply_rgb(texel,total,context->lut);
+}
+
+static void fill_triangle(uint32_t *pixels,DepthBuffer *depth,int width,int height,int pitch,RasterVertex a,RasterVertex b,RasterVertex c,uint32_t color,const CPUTexture *texture, const LightingContext *context, Vector3 normal, size_t object_index, size_t triangle_index)
 {   
     //incremental evaluation
     //calculate the three edge values at the first pixel center
@@ -203,16 +232,17 @@ static void fill_triangle(uint32_t *pixels,DepthBuffer *depth,int width,int heig
                 size_t index = (size_t)y * depth->width + x;
                 if (q > depth->values[index]) {
                     depth->values[index] = q;
+                    float view_z=1.0f/q;
+                    Vector3 point=camera_pixel_world(&context->basis,x+.5f,y+.5f,view_z);
+                    uint32_t texel=color;
                     if (texture) {
                         float uq =weight_a * a.u_over_depth + weight_b * b.u_over_depth + weight_c * c.u_over_depth;
                         float vq = weight_a * a.v_over_depth + weight_b * b.v_over_depth + weight_c * c.v_over_depth;
-                        float u = uq / q;
-                        float v = vq / q;
-                        row[x] = texture_sample(texture, u, v);
+                        float u = uq * view_z;
+                        float v = vq * view_z;
+                        texel=texture_sample(texture,u,v);
                     }
-                    else {
-                        row[x] = color;
-                    }
+                    row[x]=shade_fragment(context,texel,point,normal,object_index,triangle_index);
                 } // depth test 
             }     // inside triangle 
         }         // x loop 
@@ -299,7 +329,7 @@ bool draw_wireframe_mesh(uint32_t *pixels, int screen_width, int screen_height,
 
 bool draw_mesh(uint32_t *pixels, int screen_width, int screen_height, 
     int pitch, WireframeMesh mesh, Vector3 rotation, uint32_t color,
-    Vector3 position, const Camera *camera, RenderScratch *scratch, DepthBuffer *depth,  const CPUTexture *texture) {
+    Vector3 position, const Camera *camera, RenderScratch *scratch, DepthBuffer *depth,  const CPUTexture *texture, const LightingContext *context, size_t object_index) {
             
     // check vertex count against scratch buffer
     if (mesh.vertex_count < 0 || mesh.vertex_count > RENDER_VERTEX_CAPACITY) {
@@ -356,8 +386,18 @@ bool draw_mesh(uint32_t *pixels, int screen_width, int screen_height,
 
             if (!valid) continue;
 
+            // triangle normal. clipped fan triangles share it
+            Vector3 normal;
+            if (!triangle_unit_normal(mesh.vertices[triangle.a], mesh.vertices[triangle.b],
+                                       mesh.vertices[triangle.c], &normal))
+                continue;
+            // rotations match the vertex transform translation never rotates normals 
+            normal = vec3_rotate_y(normal, rotation.y);
+            normal = vec3_rotate_x(normal, rotation.x);
+            normal = vec3_rotate_z(normal, rotation.z);
+
             for (int j = 1; j < count - 1; ++j) {
-                fill_triangle(pixels,depth,screen_width,screen_height,pitch,vertices[0],vertices[j], vertices[j + 1],color, texture);
+                fill_triangle(pixels,depth,screen_width,screen_height,pitch,vertices[0],vertices[j], vertices[j + 1],color, texture, context, normal, object_index, (size_t)i);
             }
         }
 
@@ -370,17 +410,26 @@ clears the color buffer.
 clears depth once.
 draws the scene’s objects using the supplied scratch storage.
 returns success or failure.
+
+
+raycast.h/c	        two-sided ray–triangle intersection
+shadow_scene.h/c	own and query transformed scene triangles
+lighting.h/c	    evaluate lights and construct shadow rays
  */
 
 bool rasterizer_draw_scene(RasterTarget *target, RenderScratch *scratch,
-    const SceneObject *objects, size_t object_count, const Camera *camera)
+    const SceneObject *objects, size_t object_count, const Camera *camera, const SceneLighting *lighting, const LightingLUT *lut, const ShadowScene *shadows)
 {
     //big list of things to skip in rendering; better to make something else reason about this
-    if (!target || !scratch || !camera || (object_count && !objects) ||!target->pixels || !target->depth || !target->depth->values 
+    if (!target || !scratch || !camera || !lut || !lighting_validate(lighting) || (object_count && !objects) ||!target->pixels || !target->depth || !target->depth->values 
     ||target->width <= 0 || target->height <= 0 ||target->width > INT_MAX / (int)sizeof(uint32_t) 
     ||target->pitch < target->width * (int)sizeof(uint32_t) ||target->pitch % (int)sizeof(uint32_t) != 0 
     || target->depth->width != target->width || target->depth->height != target->height)
         return false;
+
+    LightingContext context={0};
+    context.scene=lighting;context.lut=lut;context.shadows=shadows;
+    if (!camera_build_pixel_basis(&context.basis,camera,target->width,target->height)) return false;
 
     for (int y = 0; y < target->height; ++y) {
         uint32_t *row = (uint32_t *)((uint8_t *)target->pixels + (size_t)y * target->pitch);
@@ -389,7 +438,7 @@ bool rasterizer_draw_scene(RasterTarget *target, RenderScratch *scratch,
     depth_buffer_clear(target->depth);
     for (size_t i = 0; i < object_count; ++i) {
         const SceneObject *object = &objects[i];
-        if (!object->mesh || !draw_mesh(target->pixels, target->width, target->height, target->pitch, *object->mesh, object->rotation, object->color, object->position, camera, scratch, target->depth, object->texture))
+        if (!object->mesh || !draw_mesh(target->pixels, target->width, target->height, target->pitch, *object->mesh, object->rotation, object->color, object->position, camera, scratch, target->depth, object->texture, &context, i))
             return false;
     }
     return true;

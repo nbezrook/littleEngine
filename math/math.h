@@ -1,12 +1,25 @@
 #ifndef LITTLEENGINE_MATH_H
 #define LITTLEENGINE_MATH_H
 #include "math_types.h"
+#include <stdbool.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 float clamp_float(float value, float low, float high);
+
+Vector3 vec3_subtract(Vector3 a, Vector3 b);
+float vec3_dot(Vector3 a, Vector3 b);
+Vector3 vec3_cross(Vector3 a, Vector3 b);
+/** Returns false for NULL out or zero/nonfinite squared length, including
+ * arithmetic underflow/overflow; leaves *out unchanged on failure.
+ * Intended for ordinary engine-scale vectors. No allocation.
+ */
+bool vec3_normalize(Vector3 value, Vector3 *out);
+/** Compute the winding-dependent unit normal; same failure contract. */
+bool triangle_unit_normal(Vector3 a, Vector3 b, Vector3 c, Vector3 *out);
+
 
 Vector3 vec3_rotate_x(Vector3 value, float radians);
 Vector3 vec3_rotate_y(Vector3 value, float radians);

@@ -7,7 +7,7 @@
 #include <limits>
 #include <stdexcept>
 #include <string>
-
+#include "lighting.h"
 
 // thanks man good json reader saves us a lot of nothing work
 namespace {
@@ -73,13 +73,46 @@ bool box_room_definition_load_json(BoxRoomDefinition *out, const char *path)
         const auto document = nlohmann::json::parse(file);
 
         const auto &version = document.at("version");
-        if (!version.is_number_integer() || version != 2)
-            throw std::runtime_error("Expected integer map version 2");
+        if (!version.is_number_integer() || version != 3)
+            throw std::runtime_error("Expected integer map version 3");
         const auto &rooms = document.at("rooms");
         if (!rooms.is_array() || rooms.size() != 1)
             throw std::runtime_error("This checkpoint supports exactly one room");
 
         BoxRoomDefinition result{};
+
+        result.lighting=lighting_default_unlit();
+        if (document.contains("lighting")) {
+            const auto &settings=document.at("lighting");
+            const auto &entries=settings.at("lights");
+            if (!entries.is_array() || entries.size()>SCENE_LIGHT_CAPACITY)
+                throw std::runtime_error("Expected at most 16 lights");
+            SceneLighting requested{};
+            requested.ambient=read_vector3(settings.at("ambient"));
+            requested.shadow_bias=read_number(settings.at("shadow_bias"));
+            requested.light_count=entries.size();
+            for (size_t i=0;i<entries.size();++i) {
+                const auto &entry=entries.at(i);
+                Light &light=requested.lights[i];
+                const auto &type=entry.at("type");
+                // light loading code
+                if (type=="point") {
+                    light.type=LIGHT_POINT;
+                    light.position=read_vector3(entry.at("position"));
+                    light.radius=read_number(entry.at("radius"));
+                } else if (type=="directional") {
+                    light.type=LIGHT_DIRECTIONAL;
+                    light.direction_to_light=read_vector3(entry.at("direction_to_light"));
+                } else throw std::runtime_error("Unknown light type");
+                light.color=read_vector3(entry.at("color"));
+                light.intensity=read_number(entry.at("intensity"));
+                light.casts_shadows=entry.at("casts_shadows").get<bool>();
+            }
+            if (!lighting_prepare(&result.lighting,&requested))
+                throw std::runtime_error("Invalid light colors, intensity, radius, direction, or bias");
+        }
+
+        // figure out bounds
         const auto &room = rooms.at(0);
         result.player_spawn = read_vector3(document.at("player_spawn"));
         result.bounds.min = read_vector3(room.at("min"));

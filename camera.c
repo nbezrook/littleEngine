@@ -71,3 +71,23 @@ void camera_apply_look(Camera *camera, float yaw_delta, float pitch_delta)
 
     if (camera->pitch < -pitch_limit) camera->pitch = -pitch_limit;
 }
+bool camera_build_pixel_basis(CameraPixelBasis *out, const Camera *camera, int width, int height)
+{
+    if (!out || !camera || width<=0 || height<=0
+        || !isfinite(camera->position.x) || !isfinite(camera->position.y)
+        || !isfinite(camera->position.z) || !isfinite(camera->yaw)
+        || !isfinite(camera->pitch) || !isfinite(camera->focal_length_pixels)
+        || camera->focal_length_pixels<=0) return false;
+    float sy=sinf(camera->yaw),cy=cosf(camera->yaw);
+    float sp=sinf(camera->pitch),cp=cosf(camera->pitch);
+    CameraPixelBasis result;
+    result.origin=camera->position;
+    result.right=(Vector3){cy,0,-sy};
+    result.up=(Vector3){-sy*sp,cp,-cy*sp};
+    result.forward=(Vector3){sy*cp,sp,cy*cp};
+    result.inverse_focal=1/camera->focal_length_pixels;
+    if (!isfinite(result.inverse_focal)) return false;
+    result.center_x=width*.5f;result.center_y=height*.5f;
+    *out=result;
+    return true;
+}

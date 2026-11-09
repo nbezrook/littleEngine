@@ -12,10 +12,33 @@ typedef struct {
     float near_clip;
 } Camera;
 
+typedef struct {
+    Vector3 origin,right,up,forward;
+    float inverse_focal,center_x,center_y;
+} CameraPixelBasis;
+
 // dancing with a little C 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/** Invert the camera's rotation once per frame; out unchanged on failure. */
+bool camera_build_pixel_basis(CameraPixelBasis *out, const Camera *camera, int width, int height);
+/** Pixel coordinates include their centre offset (x+0.5,y+0.5).
+ * view_z is positive camera-space depth, NOT Euclidean ray distance.
+ * Requires a prepared basis and finite inputs. No allocation/trigonometry. */
+static inline Vector3 camera_pixel_world(const CameraPixelBasis *basis, float pixel_x, float pixel_y, float view_z)
+{
+    float x=(pixel_x-basis->center_x)*basis->inverse_focal;
+    float y=(basis->center_y-pixel_y)*basis->inverse_focal;
+    Vector3 result={
+        basis->origin.x+(basis->right.x*x+basis->up.x*y+basis->forward.x)*view_z,
+        basis->origin.y+(basis->right.y*x+basis->up.y*y+basis->forward.y)*view_z,
+        basis->origin.z+(basis->right.z*x+basis->up.z*y+basis->forward.z)*view_z
+    };
+    return result;
+}
+
 
 /**
  * @brief Move horizontally relative to the camera's yaw, without collision.

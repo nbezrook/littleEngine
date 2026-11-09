@@ -86,4 +86,52 @@ int cAbs(int n) {
     return (n + mask) ^ mask;
 }
 
+
+
+Vector3 vec3_subtract(Vector3 a, Vector3 b)
+{
+    return (Vector3){a.x - b.x, a.y - b.y, a.z - b.z};
+}
+
+float vec3_dot(Vector3 a, Vector3 b)
+{
+    return a.x * b.x + a.y * b.y + a.z * b.z;
+}
+
+Vector3 vec3_cross(Vector3 a, Vector3 b)
+{
+    return (Vector3){
+        a.y * b.z - a.z * b.y,
+        a.z * b.x - a.x * b.z,
+        a.x * b.y - a.y * b.x
+    };
+}
+
+bool vec3_normalize(Vector3 value, Vector3 *out)
+{
+    if (!out) return false;
+    float length_squared = vec3_dot(value, value);
+    if (!isfinite(length_squared) || length_squared <= 0.0f)
+        return false;
+
+    float inverse_length = 1.0f / sqrtf(length_squared);
+    Vector3 result = {
+        value.x * inverse_length,
+        value.y * inverse_length,
+        value.z * inverse_length
+    };
+    *out = result;
+    return true;
+}
+
+bool triangle_unit_normal(Vector3 a, Vector3 b, Vector3 c, Vector3 *out)
+{
+    Vector3 ab = vec3_subtract(b, a);
+    Vector3 ac = vec3_subtract(c, a);
+    return vec3_normalize(vec3_cross(ab, ac), out);
+}
+
+
+
+
 #endif // MATH_C

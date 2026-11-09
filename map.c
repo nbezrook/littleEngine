@@ -2,6 +2,7 @@
 #include "math/primitives.h"
 #include <math.h>    /* isfinite */
 #include <string.h>  /* memchr */
+#include "lighting.h"
 
 // development asserts; map data is bad if these pop
 _Static_assert(MAP_VERTEX_CAPACITY >= 8, "Room needs eight vertices; check Map");
@@ -33,6 +34,8 @@ bool map_make_test_room(MapData *out)
         .triangle_count = 12,
         .surface_count = 6
     };
+
+    result.lighting = lighting_default_unlit();
 
     for (size_t i = 0; i < result.vertex_count; ++i)
         result.vertices[i] = room_mesh.vertices[i];
@@ -84,9 +87,8 @@ bool map_make_test_room(MapData *out)
 
 bool map_validate(const MapData *map)
 {
-    if (!map || map->vertex_count > MAP_VERTEX_CAPACITY 
-        || map->triangle_count > MAP_TRIANGLE_CAPACITY 
-        || map->surface_count > MAP_SURFACE_CAPACITY) return false;
+    if (!map || map->vertex_count > MAP_VERTEX_CAPACITY  || map->triangle_count > MAP_TRIANGLE_CAPACITY 
+        || map->surface_count > MAP_SURFACE_CAPACITY || !lighting_validate(&map->lighting)) return false;
 
     Vector3 spawn = map->player_spawn;
     if (!isfinite(spawn.x) || !isfinite(spawn.y) || !isfinite(spawn.z)) return false;

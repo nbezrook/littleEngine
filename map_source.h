@@ -2,6 +2,7 @@
 #define LITTLEENGINE_MAP_SOURCE_H
 #include <stdbool.h>
 #include "math/map_types.h"
+#include "lighting_types.h"
 
 typedef struct {
     Point2 metres_per_repeat;
@@ -20,13 +21,14 @@ typedef struct {
     SurfaceDefinition walls;
     SurfaceDefinition floor;
     SurfaceDefinition ceiling;
+    SceneLighting lighting;
 } BoxRoomDefinition;
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 /**
- * Load version-two JSON containing exactly one box room.
+ * Load version-three JSON containing exactly one box room.
  * Startup/loading operation: file IO and temporary JSON allocations occur here.
  * Copies all values; no pointers into the document survive this call.
  * Rejects bad dimensions, spawn, numbers, and material-name lengths and mapping settings.
