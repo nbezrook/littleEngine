@@ -60,7 +60,17 @@ static bool point_direction(Vector3 from, Vector3 to, Vector3 *direction, float 
     double x=(double)to.x-from.x, y=(double)to.y-from.y, z=(double)to.z-from.z;
     double length=sqrt(x*x+y*y+z*z);
     if (!isfinite(length) || length<=0 || length>FLT_MAX) return false;
-    *direction=(Vector3){(float)(x/length),(float)(y/length),(float)(z/length)};
+
+    // calculated reciprocal only once instead
+    //*direction=(Vector3){(float)(x/length),(float)(y/length),(float)(z/length)};
+    double inverse_length = 1.0 / length;
+
+    *direction = (Vector3){
+        (float)(x * inverse_length),
+        (float)(y * inverse_length),
+        (float)(z * inverse_length)
+    };
+
     *distance=(float)length;
     return true;
 }
