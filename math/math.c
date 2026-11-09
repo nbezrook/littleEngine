@@ -73,14 +73,6 @@ float cFabs(float f) {
     return u.f;
 }
 
-float min_finite(float a, float b) {
-    return a < b ? a : b;
-}
-
-float max_finite(float a, float b) {
-    return a > b ? a : b;
-}
-
 int cAbs(int n) {
     int const mask = n >> (sizeof(int) * 8 - 1);
     return (n + mask) ^ mask;

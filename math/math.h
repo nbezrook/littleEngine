@@ -32,15 +32,15 @@ Vector3 vec3_rotate_z(Vector3 value, float radians);
  * @param b Finite operand.
  * @return a when a < b, otherwise b; not a substitute for fminf's NaN/signed-zero contract.
  */
-float min_finite(float a, float b);
+static inline float min_finite(float a, float b){return a < b ? a : b;}
+
 /**
  * @brief Return the larger of two finite floats using a simple comparison.
  * @param a Finite operand.
  * @param b Finite operand.
  * @return a when a > b, otherwise b; not a substitute for fmaxf's NaN/signed-zero contract.
  */
-float max_finite(float a, float b);
-
+static inline float max_finite(float a, float b) {return a > b ? a : b;}
 
 /**
  * @brief Compute integer magnitude using an arithmetic-right-shift bit trick.
@@ -57,6 +57,10 @@ int cAbs(int n);
  * @warning Assumes the target's float layout matches uint32_t; this is not format-independent.
  */
 float cFabs(float f);
+
+
+
+
 
 #ifdef __cplusplus
 }
