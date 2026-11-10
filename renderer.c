@@ -16,9 +16,23 @@ bool renderer_init(EngineRenderer *renderer, const char *title, int width, int h
         SDL_SetError("Shadow-map allocation failed.");
         goto fail;
     }
-    
+
     if (!SDL_Init(SDL_INIT_VIDEO)) goto fail;
     renderer->video_initialized = true;
+
+renderer->prepared_scene = raster_scene_create(width, height, 8192, 1024 * 1024);
+
+    if (!renderer->prepared_scene) {
+        SDL_SetError("Prepared scene allocation failed.");
+        goto fail;
+    }
+
+    renderer->workers = render_workers_create(0);
+
+    if (!renderer->workers) {
+        SDL_SetError("Render worker startup failed.");
+        goto fail;
+}
 
     renderer->window = SDL_CreateWindow(title, width, height, 0);
     if (!renderer->window) goto fail;
@@ -39,6 +53,10 @@ fail:
 void renderer_shutdown(EngineRenderer *renderer)
 {
     if (!renderer) return;
+
+    render_workers_destroy(renderer->workers);
+    raster_scene_destroy(renderer->prepared_scene);
+
     if (renderer->screen_texture) SDL_DestroyTexture(renderer->screen_texture);
     if (renderer->sdl_renderer) SDL_DestroyRenderer(renderer->sdl_renderer);
     if (renderer->window) SDL_DestroyWindow(renderer->window);
@@ -47,6 +65,25 @@ void renderer_shutdown(EngineRenderer *renderer)
     if (renderer->video_initialized) SDL_Quit();
     *renderer = (EngineRenderer){0};
 }
+
+typedef struct {
+    RasterScene *scene;
+    RasterTarget target;
+} TileWork;
+
+/* Copilot
+
+The render_tile_job function is a static function that takes a pointer to data, a tile index, and a worker index as parameters. 
+It retrieves a TileWork structure from data and calls the raster_scene_render_tile function to render a specific tile of a scene, 
+returning a boolean indicating success or failure.*/
+static bool render_tile_job(void *data, size_t tile, size_t worker)
+{
+    (void)worker;
+    TileWork *work = data;
+    return raster_scene_render_tile(work->scene, &work->target, tile, RASTER_SIMD);
+}
+
+
 
 void render_frame(EngineRenderer *renderer, const SceneObject *objects,
     size_t object_count, const Camera *camera, const SceneLighting *lighting)
@@ -63,10 +100,22 @@ void render_frame(EngineRenderer *renderer, const SceneObject *objects,
         .pitch = frame->pitch,
         .depth = &frame->depth
     };
-    if (!rasterizer_draw_scene(&target, &renderer->scratch, objects, object_count, camera, lighting, &renderer->lighting_lut, renderer->shadow_maps)) {
-        SDL_Log("CPU rasterizer rejected the target or scene geometry.");
+
+
+    if (!raster_scene_prepare(renderer->prepared_scene,objects, object_count, camera, lighting,&renderer->lighting_lut, renderer->shadow_maps)) {
+        SDL_Log("Scene preparation failed.");
         return;
     }
+
+    TileWork work = {renderer->prepared_scene, target};
+
+    if (!render_workers_run(renderer->workers,raster_scene_job_count(renderer->prepared_scene),render_tile_job, &work)) {
+        SDL_Log("Tile rendering failed.");
+        return;
+    }
+
+
+
     if (!SDL_UpdateTexture(renderer->screen_texture, NULL, frame->pixels, frame->pitch)) {
         SDL_Log("Framebuffer upload failed: %s", SDL_GetError());
         return;

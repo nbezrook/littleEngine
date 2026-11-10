@@ -5,12 +5,17 @@
 #include <math.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <float.h>
+// load intrinsics only if SSE2 (how old is your machine?)
+#if defined(__SSE2__) && !defined(RASTER_FORCE_SCALAR)
+#include <emmintrin.h>
+#endif
 
-// not sure when youd need to change this
+// A cubemap always has the six +/-X, +/-Y, +/-Z faces.
 enum { CUBE_FACE_COUNT=6 };
 
 typedef struct {
-    DepthBuffer depth[CUBE_FACE_COUNT]; // depth buffer takes care of storage; allocation will need to be more dynamic to handle many lights
+    DepthBuffer depth[CUBE_FACE_COUNT]; // Borrowed slices; ShadowMaps owns storage.
     CameraPixelBasis basis[CUBE_FACE_COUNT];
     Vector3 position;
     float radius;
@@ -26,20 +31,18 @@ struct ShadowMaps {
     bool ready;
 };
 
-//great candidate for multithreading or gpu
+// Scalar arithmetic stays inside a tile/packet job, rather than becoming a job itself.
 static float dot(Vector3 a,Vector3 b) {return a.x*b.x+a.y*b.y+a.z*b.z;}
 static bool finite_vec(Vector3 v) {return isfinite(v.x)&&isfinite(v.y)&&isfinite(v.z);}
 
 ShadowMaps *shadow_maps_create(size_t capacity,int face_size,float near_clip)
 {
-    if(!capacity || capacity>SCENE_LIGHT_CAPACITY || face_size<4
-       || !isfinite(near_clip) || near_clip<=0) return NULL;
+    if(!capacity || capacity>SCENE_LIGHT_CAPACITY || face_size<4 || !isfinite(near_clip) || near_clip<=0) return NULL;
     size_t side=(size_t)face_size;
     if(side>SIZE_MAX/side) return NULL;
     size_t face_pixels=side*side;
     size_t face_count=capacity*CUBE_FACE_COUNT;
-    if(face_pixels>SIZE_MAX/face_count
-       || face_pixels*face_count>SIZE_MAX/sizeof(float)) return NULL;
+    if(face_pixels>SIZE_MAX/face_count || face_pixels*face_count>SIZE_MAX/sizeof(float)) return NULL;
     ShadowMaps *maps=calloc(1,sizeof(*maps));
     if(!maps) return NULL;
     maps->storage=malloc(face_pixels*face_count*sizeof(float));
@@ -56,7 +59,7 @@ ShadowMaps *shadow_maps_create(size_t capacity,int face_size,float near_clip)
 void shadow_maps_destroy(ShadowMaps *maps)
 {
     if(!maps) return;
-    // dont touch interior pointers, depth unit takes care of allocation
+    // Free the backing allocation once; individual faces only borrow it.
     free(maps->storage);free(maps);
 }
 bool shadow_maps_build(ShadowMaps *maps,RenderScratch *scratch,
@@ -69,7 +72,7 @@ bool shadow_maps_build(ShadowMaps *maps,RenderScratch *scratch,
     for(size_t i=0;i<lighting->light_count;++i)
         if(lighting->lights[i].casts_shadows && lighting->lights[i].type!=LIGHT_POINT) return false;
 
-    // what is this?
+    // Orientations matching the engine camera: +X,-X,+Y,-Y,+Z,-Z.
     const float pi=3.14159265358979323846f;
     const float yaw[CUBE_FACE_COUNT]={pi*.5f,-pi*.5f,0,0,0,pi};
     const float pitch[CUBE_FACE_COUNT]={0,0,pi*.5f,-pi*.5f,0,0};
@@ -145,4 +148,97 @@ bool shadow_maps_occluded(const ShadowMaps *maps,size_t light_index,Vector3 poin
     float comparison_z=z-maps->bias;
     if(comparison_z<maps->near_clip) comparison_z=maps->near_clip;
     return stored_q*comparison_z>1.0f;
+}
+
+#if defined(__SSE2__) && !defined(RASTER_FORCE_SCALAR)
+/* Copilot
+
+The gather_component function retrieves the specified component (x, y, or z) from an array of four Vector3 structures 
+based on the given axis index, and returns the components as a SIMD vector of type __m128. 
+It uses conditional expressions to select the appropriate component for each vector in the array before loading them into the SIMD register.*/
+static __m128 gather_component(const Vector3 v[4],int axis)
+{
+    float a[4];for(int i=0;i<4;++i)a[i]=axis==0?v[i].x:axis==1?v[i].y:v[i].z;
+    return _mm_loadu_ps(a);
+}
+// should speak for itself
+static __m128 vector_dot(__m128 x,__m128 y,__m128 z,Vector3 axis)
+{
+    return _mm_add_ps(_mm_add_ps(_mm_mul_ps(x,_mm_set1_ps(axis.x)),_mm_mul_ps(y,_mm_set1_ps(axis.y))),_mm_mul_ps(z,_mm_set1_ps(axis.z)));
+}
+/* Copilot
+
+The packet_finite function is a static function that takes a single __m128 vector as input and returns a __m128 vector. 
+It checks if the elements of the input vector are finite by comparing them to positive infinity and returns a mask indicating which elements are finite.
+*/
+static __m128 packet_finite(__m128 v)
+{
+    return _mm_cmple_ps(_mm_andnot_ps(_mm_set1_ps(-0.0f),v),_mm_set1_ps(FLT_MAX));
+}
+#endif
+/* Copilot
+
+The shadow_maps_occluded4 function determines which of the four specified points are occluded by shadows in a given shadow map, 
+utilizing SIMD operations for performance when available. 
+It checks various conditions such as the validity of inputs and the readiness of shadow maps, 
+and it returns a bitmask indicating which points are occluded.*/
+unsigned shadow_maps_occluded4(const ShadowMaps *maps,size_t index,const Vector3 points[4],const Vector3 normals[4],unsigned active)
+{
+    active&=15;
+    if(!active || !maps || !maps->ready || index>=maps->light_count || !points || !normals) return 0;
+    const ShadowCube *cube=&maps->cubes[index];if(!cube->enabled) return 0;
+#if defined(__SSE2__) && !defined(RASTER_FORCE_SCALAR)
+    Vector3 deltas[4]={{0}};int common=-1;bool diverged=false;
+    for(int lane=0;lane<4;++lane) if(active&(1u<<lane)) {
+        if(!finite_vec(points[lane]) || !finite_vec(normals[lane])) {active&=~(1u<<lane);continue;}
+        Vector3 d={points[lane].x-cube->position.x,points[lane].y-cube->position.y,points[lane].z-cube->position.z};
+        double distance2=(double)d.x*d.x+(double)d.y*d.y+(double)d.z*d.z;
+        if(distance2>=(double)cube->radius*cube->radius) {active&=~(1u<<lane);continue;}
+        d.x+=normals[lane].x*maps->bias;d.y+=normals[lane].y*maps->bias;d.z+=normals[lane].z*maps->bias;
+        float ax=fabsf(d.x),ay=fabsf(d.y),az=fabsf(d.z);int face;
+        if(ax>=ay && ax>=az)face=d.x>=0?0:1;else if(ay>=az)face=d.y>=0?2:3;else face=d.z>=0?4:5;
+        if(common<0)common=face;else if(common!=face)diverged=true;
+        deltas[lane]=d;
+    }
+    if(!active) return 0;
+    if(!diverged) {
+        const CameraPixelBasis *basis=&cube->basis[common];
+        __m128 dx=gather_component(deltas,0),dy=gather_component(deltas,1),dz=gather_component(deltas,2);
+        __m128 z=vector_dot(dx,dy,dz,basis->forward);
+        __m128 valid=_mm_and_ps(packet_finite(z),_mm_cmpge_ps(z,_mm_set1_ps(maps->near_clip)));
+        __m128 safe_z=_mm_or_ps(_mm_and_ps(valid,z),_mm_andnot_ps(valid,_mm_set1_ps(1)));
+        __m128 inverse=_mm_div_ps(_mm_set1_ps(1),safe_z);
+        __m128 sx=_mm_add_ps(_mm_set1_ps(basis->center_x),_mm_mul_ps(_mm_mul_ps(_mm_set1_ps(maps->focal),vector_dot(dx,dy,dz,basis->right)),inverse));
+        __m128 sy=_mm_sub_ps(_mm_set1_ps(basis->center_y),_mm_mul_ps(_mm_mul_ps(_mm_set1_ps(maps->focal),vector_dot(dx,dy,dz,basis->up)),inverse));
+        valid=_mm_and_ps(valid,_mm_and_ps(packet_finite(sx),packet_finite(sy)));
+        __m128 maximum=_mm_set1_ps((float)(maps->face_size-1));
+        sx=_mm_min_ps(maximum,_mm_max_ps(_mm_setzero_ps(),sx));
+        sy=_mm_min_ps(maximum,_mm_max_ps(_mm_setzero_ps(),sy));
+        __m128i ix=_mm_cvttps_epi32(sx),iy=_mm_cvttps_epi32(sy);
+        int x[4],y[4];_mm_storeu_si128((__m128i*)x,ix);_mm_storeu_si128((__m128i*)y,iy);
+        float sampled[4]={0};
+        unsigned valid_bits=active&(unsigned)_mm_movemask_ps(valid);
+        const DepthBuffer *depth=&cube->depth[common];
+        for(int lane=0;lane<4;++lane)if(valid_bits&(1u<<lane))sampled[lane]=depth->values[(size_t)y[lane]*maps->face_size+x[lane]];
+        __m128 px=_mm_mul_ps(_mm_sub_ps(_mm_add_ps(_mm_cvtepi32_ps(ix),_mm_set1_ps(.5f)),_mm_set1_ps(basis->center_x)),_mm_set1_ps(basis->inverse_focal));
+        __m128 py=_mm_mul_ps(_mm_sub_ps(_mm_sub_ps(_mm_set1_ps(basis->center_y),_mm_cvtepi32_ps(iy)),_mm_set1_ps(.5f)),_mm_set1_ps(basis->inverse_focal));
+        __m128 rx=_mm_add_ps(_mm_add_ps(_mm_mul_ps(_mm_set1_ps(basis->right.x),px),_mm_mul_ps(_mm_set1_ps(basis->up.x),py)),_mm_set1_ps(basis->forward.x));
+        __m128 ry=_mm_add_ps(_mm_add_ps(_mm_mul_ps(_mm_set1_ps(basis->right.y),px),_mm_mul_ps(_mm_set1_ps(basis->up.y),py)),_mm_set1_ps(basis->forward.y));
+        __m128 rz=_mm_add_ps(_mm_add_ps(_mm_mul_ps(_mm_set1_ps(basis->right.z),px),_mm_mul_ps(_mm_set1_ps(basis->up.z),py)),_mm_set1_ps(basis->forward.z));
+        __m128 nx=gather_component(normals,0),ny=gather_component(normals,1),nz=gather_component(normals,2);
+        __m128 denominator=_mm_add_ps(_mm_add_ps(_mm_mul_ps(nx,rx),_mm_mul_ps(ny,ry)),_mm_mul_ps(nz,rz));
+        __m128 use_plane=_mm_cmpgt_ps(_mm_andnot_ps(_mm_set1_ps(-0.0f),denominator),_mm_set1_ps(1e-6f));
+        __m128 safe_denominator=_mm_or_ps(_mm_and_ps(use_plane,denominator),_mm_andnot_ps(use_plane,_mm_set1_ps(1)));
+        __m128 numerator=_mm_add_ps(_mm_add_ps(_mm_mul_ps(nx,dx),_mm_mul_ps(ny,dy)),_mm_mul_ps(nz,dz));
+        __m128 plane_z=_mm_div_ps(numerator,safe_denominator);
+        use_plane=_mm_and_ps(use_plane,_mm_and_ps(packet_finite(plane_z),_mm_cmpge_ps(plane_z,_mm_set1_ps(maps->near_clip))));
+        z=_mm_or_ps(_mm_and_ps(use_plane,plane_z),_mm_andnot_ps(use_plane,z));
+        __m128 comparison=_mm_max_ps(_mm_set1_ps(maps->near_clip),_mm_sub_ps(z,_mm_set1_ps(maps->bias)));
+        __m128 q=_mm_loadu_ps(sampled);
+        return valid_bits&(unsigned)_mm_movemask_ps(_mm_and_ps(_mm_cmpgt_ps(q,_mm_setzero_ps()),_mm_cmpgt_ps(_mm_mul_ps(q,comparison),_mm_set1_ps(1))));
+    }
+#endif
+    unsigned result=0;
+    for(int lane=0;lane<4;++lane)if((active&(1u<<lane)) && shadow_maps_occluded(maps,index,points[lane],normals[lane]))result|=1u<<lane;
+    return result;
 }

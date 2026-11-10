@@ -10,6 +10,9 @@
 #include "framebuffer.h"
 #include "lighting.h"
 #include "shadow_maps.h"
+// threaded SIMD code
+#include "render_workers.h"
+#include "raster_scene.h"
 
 typedef struct {
     SDL_Window *window;
@@ -21,6 +24,9 @@ typedef struct {
     LightingLUT lighting_lut;
     ShadowMaps *shadow_maps; // renderer handles persistent depth cubemaps
     FrameBuffer framebuffer;
+    //render workers do render jobs
+    RenderWorkers *workers;
+    RasterScene *prepared_scene;
 } EngineRenderer;
 
     #ifdef __cplusplus
@@ -36,11 +42,7 @@ typedef struct {
      * @return True on success; false on allocation, framebuffer, or SDL failure.
      * @note Main thread only; partial initialization is cleaned up on failure.
      */
-    bool renderer_init(
-        EngineRenderer *renderer,
-        const char *title,
-        int width,
-        int height
+    bool renderer_init(EngineRenderer *renderer, const char *title, int width, int height
     );
 
 

@@ -25,15 +25,17 @@ void shadow_maps_destroy(ShadowMaps *maps); /* NULL accepted. */
  * partial results. Shadow-casting directional lights are unsupported and fail.
  * Opaque, two-sided casters; near clipping only; geometry inside the near plane
  * may be missed. No SDL, file I/O, logging or allocation. */
-bool shadow_maps_build(ShadowMaps *maps,RenderScratch *scratch,
-    const SceneObject *objects,size_t object_count,const SceneLighting *lighting);
+bool shadow_maps_build(ShadowMaps *maps,RenderScratch *scratch, const SceneObject *objects,size_t object_count,const SceneLighting *lighting);
 /** Read-only hard-shadow query by the same light index supplied to build.
  * Requires finite point and unit surface normal; successful build must precede
  * concurrent queries. Returns false for disabled/absent maps, empty texels,
  * outside-radius points or points inside the near plane. The metre-valued bias
  * offsets the receiver plane and comparison. No allocation or mutation. */
-bool shadow_maps_occluded(const ShadowMaps *maps,size_t light_index,
-    Vector3 point,Vector3 normal);
+bool shadow_maps_occluded(const ShadowMaps *maps,size_t light_index, Vector3 point,Vector3 normal);
+/** Four independent queries; low four result bits identify occluded active lanes.
+ * Inactive lanes are ignored. Same lifetime/input contract as the scalar query.
+ * Uses a common-face SSE2 path when possible, otherwise scalar fallback. */
+unsigned shadow_maps_occluded4(const ShadowMaps *maps,size_t light_index, const Vector3 points[4],const Vector3 normals[4],unsigned active_mask);
 
 
     

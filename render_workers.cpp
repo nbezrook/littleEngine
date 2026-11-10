@@ -43,7 +43,13 @@ static void worker_loop(RenderWorkers *pool,size_t index)
 RenderWorkers *render_workers_create(size_t count)
 {
     if(count>64) return nullptr;
-    if(!count) count=std::min<size_t>(4,std::max<unsigned>(1,std::thread::hardware_concurrency()));
+    //thread count
+    if (count == 0) {
+        unsigned available = std::thread::hardware_concurrency();
+
+        count = available > 1 ? available - 1 : 1;
+    }
+
     RenderWorkers *pool=nullptr;
     try {
         pool=new RenderWorkers;
