@@ -110,8 +110,7 @@ bool engine_init(Engine *engine, int width, int height, const char *game_directo
         return false;
     }
     
-    if (!renderer_init(
-            &engine->renderer, "my littleEngine", width, height)) {
+    if (!renderer_init(&engine->renderer,"my littleEngine",width,height,&engine->config.rendering)) {
         SDL_Log("Engine initialization failed: %s", SDL_GetError());
         return false;
     }

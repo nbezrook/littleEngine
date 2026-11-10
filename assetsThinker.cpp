@@ -113,9 +113,21 @@ bool game_config_load_json(GameConfig *out, const char *path)
         constexpr float degrees_to_radians = 0.017453292519943295f;
         result.player.max_pitch_radians = pitch_degrees * degrees_to_radians;
         result.vertical_fov_radians = fov_degrees * degrees_to_radians;
-        if (result.player.max_pitch_radians <= 0.0f ||
-            result.vertical_fov_radians <= 0.0f)
+        if (result.player.max_pitch_radians <= 0.0f || result.vertical_fov_radians <= 0.0f)
             throw std::runtime_error("Angle is too small after conversion");
+
+        const auto &rendering = document.at("rendering");
+        const auto &size = rendering.at("shadow_face_size");
+
+        if (!size.is_number_integer() || size < 32 || size > 4096)
+            throw std::runtime_error("shadow_face_size must be an integer from 32 to 4096");
+
+        result.rendering.shadow_face_size = size.get<int>();
+
+        result.rendering.shadow_near_clip = config_number(rendering, "shadow_near_clip");
+
+        if (result.rendering.shadow_near_clip <= 0.0f)
+            throw std::runtime_error("shadow_near_clip must be positive");
 
         *out = result;
         return true;

@@ -1,8 +1,9 @@
 #include "renderer.h"
 #include "rasterizer.h"
 
-bool renderer_init(EngineRenderer *renderer, const char *title, int width, int height)
+bool renderer_init(EngineRenderer *renderer, const char *title, int width, int height, const RenderConfig *config)
 {
+    if (!renderer || !config) return false;
     *renderer = (EngineRenderer){0};
     if (!lighting_lut_init(&renderer->lighting_lut)) return false;
     if (!framebuffer_init(&renderer->framebuffer, width, height)) {
@@ -11,7 +12,7 @@ bool renderer_init(EngineRenderer *renderer, const char *title, int width, int h
         return false;
     }
     // good candidate for delegating to job; renderer needs to have way to lock and unlock
-    renderer->shadow_maps=shadow_maps_create(SCENE_LIGHT_CAPACITY,256,0.01f);
+    renderer->shadow_maps = shadow_maps_create(SCENE_LIGHT_CAPACITY,config->shadow_face_size,config->shadow_near_clip);
     if (!renderer->shadow_maps) {
         SDL_SetError("Shadow-map allocation failed.");
         goto fail;
@@ -20,7 +21,7 @@ bool renderer_init(EngineRenderer *renderer, const char *title, int width, int h
     if (!SDL_Init(SDL_INIT_VIDEO)) goto fail;
     renderer->video_initialized = true;
 
-renderer->prepared_scene = raster_scene_create(width, height, 8192, 1024 * 1024);
+    renderer->prepared_scene = raster_scene_create(width, height, 8192, 1024 * 1024);
 
     if (!renderer->prepared_scene) {
         SDL_SetError("Prepared scene allocation failed.");

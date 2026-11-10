@@ -14,6 +14,8 @@
 #include "render_workers.h"
 #include "raster_scene.h"
 
+#include "render_config.h"
+
 typedef struct {
     SDL_Window *window;
     SDL_Renderer *sdl_renderer;
@@ -42,8 +44,7 @@ typedef struct {
      * @return True on success; false on allocation, framebuffer, or SDL failure.
      * @note Main thread only; partial initialization is cleaned up on failure.
      */
-    bool renderer_init(EngineRenderer *renderer, const char *title, int width, int height
-    );
+    bool renderer_init(EngineRenderer *renderer, const char *title, int width, int height, const RenderConfig *config);
 
 
     /**

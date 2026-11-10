@@ -1,6 +1,8 @@
 #ifndef LITTLEENGINE_GAME_CONFIG_H
 #define LITTLEENGINE_GAME_CONFIG_H
 
+#include "render_config.h"
+
 enum {
     GAME_MAP_PATH_BYTES = 256 
 };
@@ -21,6 +23,8 @@ typedef struct {
     float vertical_fov_radians;
     float near_clip;           // meters
     float gravity;
+
+    RenderConfig rendering;
 
     char start_map[GAME_MAP_PATH_BYTES];
 } GameConfig;
