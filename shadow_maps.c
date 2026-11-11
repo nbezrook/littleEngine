@@ -63,6 +63,57 @@ typedef struct {
 static float dot(Vector3 a,Vector3 b) {return a.x*b.x+a.y*b.y+a.z*b.z;}
 static bool finite_vec(Vector3 v) {return isfinite(v.x)&&isfinite(v.y)&&isfinite(v.z);}
 
+// pack shadow plane into SIMD vector
+#if defined(__SSE2__) && !defined(RASTER_FORCE_SCALAR)
+typedef struct {
+    __m128 numerator, a, b, c, fallback_z;
+} ShadowPlanePacket;
+
+// perform OR on shadow mask
+static __m128 shadow_select(__m128 mask, __m128 yes, __m128 no)
+{
+    return _mm_or_ps(_mm_and_ps(mask, yes), _mm_andnot_ps(mask, no));
+}
+/* Copilot
+
+computes shadow values for four shadow receivers based on their respective coordinates and depth values, utilizing SIMD operations for performance. 
+It evaluates whether each receiver is valid, calculates a denominator using plane parameters, 
+and determines the final shadow value while considering clipping and bias adjustments.*/
+static __m128 shadow_tap4(const ShadowMaps *maps, const ShadowReceiver receivers[4],const ShadowPlanePacket *plane, unsigned valid, unsigned tap)
+{
+    float xs[4] = {0}, ys[4] = {0}, samples[4] = {0};
+
+    // each lane may read a different cubemap face but only valid lanes read memory
+    for (unsigned lane = 0; lane < 4; ++lane) {
+        if (!(valid & (1u << lane))) continue;
+        const ShadowReceiver *r = &receivers[lane];
+        int x = (tap & 1u) ? r->x1 : r->x0;
+        int y = (tap & 2u) ? r->y1 : r->y0;
+        xs[lane] = (float)x;
+        ys[lane] = (float)y;
+        samples[lane] = r->depth->values[(size_t)y * r->depth->width + x];
+    }
+    // a lot of annoying spaghetti code but worth the speeed up
+    __m128 denominator = _mm_add_ps(_mm_add_ps(_mm_mul_ps(plane->a, _mm_loadu_ps(xs)),_mm_mul_ps(plane->b, _mm_loadu_ps(ys))), plane->c);
+
+    __m128 absolute = _mm_andnot_ps(_mm_set1_ps(-0.0f), denominator);
+    __m128 use_plane = _mm_cmpgt_ps(absolute, _mm_set1_ps(1e-6f));
+    __m128 safe = shadow_select(use_plane, denominator, _mm_set1_ps(1));
+    __m128 plane_z = _mm_div_ps(plane->numerator, safe);
+    use_plane = _mm_and_ps(use_plane,_mm_and_ps(packet_finite(plane_z),_mm_cmpge_ps(plane_z, _mm_set1_ps(maps->near_clip))));
+
+    __m128 z = shadow_select(use_plane, plane_z, plane->fallback_z);
+    __m128 comparison = _mm_max_ps(_mm_set1_ps(maps->near_clip), _mm_sub_ps(z, _mm_set1_ps(maps->bias)));
+    __m128 q = _mm_loadu_ps(samples);
+    __m128 blocked = _mm_and_ps(_mm_cmpgt_ps(q, _mm_setzero_ps()),_mm_cmpgt_ps(_mm_mul_ps(q, comparison), _mm_set1_ps(1)));
+
+    return _mm_andnot_ps(blocked, _mm_set1_ps(1));
+}
+#endif
+
+
+
+
 /* Copilot
 
 The shadow_receiver_plane function computes a ShadowReceiverPlane structure based on the provided camera pixel basis, 
@@ -436,23 +487,53 @@ float shadow_maps_visibility(const ShadowMaps *maps,size_t light_index,Vector3 p
 }
 
 
+// parallelized for SIMD
+/* Copilot
 
-
-
-
-
-
-
-
-void shadow_maps_visibility4(const ShadowMaps *maps,size_t light_index,const Vector3 points[4],const Vector3 normals[4],unsigned active_mask,float visibility[4])
+The shadow_maps_visibility4 function computes the visibility of shadow maps for up to four light sources in parallel 
+using SIMD instructions, optimizing performance through vectorized operations. It prepares shadow receivers based on the provided points and normals, 
+applies a bilinear PCF filter, and updates the visibility array accordingly, while falling back to a scalar approach if SIMD is not available.*/
+void shadow_maps_visibility4(const ShadowMaps *maps, size_t light_index,const Vector3 points[4], const Vector3 normals[4],unsigned active_mask, float visibility[4])
 {
     unsigned active = active_mask & 15u;
-
+    #if defined(__SSE2__) && !defined(RASTER_FORCE_SCALAR) // seriously get a new cpu
+    // prepare receivers. each receiver gets a lane to process
+    ShadowReceiver receivers[4] = {0};
+    unsigned valid = 0;
     for (unsigned lane = 0; lane < 4; ++lane) {
-        visibility[lane] = 0.0f;
-
-        if (active & (1u << lane)) {
-            visibility[lane] = shadow_maps_visibility(maps,light_index,points[lane],normals[lane]);
-        }
+        visibility[lane] = (active & (1u << lane)) ? 1.0f : 0.0f;
+        if ((active & (1u << lane)) && shadow_prepare_receiver(maps, light_index, points[lane], normals[lane], &receivers[lane]))
+            valid |= 1u << lane;
     }
+    if (!valid) return;
+    // pack coefficients
+    ShadowPlanePacket plane = {
+        .numerator = _mm_set_ps(receivers[3].plane.numerator, receivers[2].plane.numerator,receivers[1].plane.numerator, receivers[0].plane.numerator),
+        .a = _mm_set_ps(receivers[3].plane.denominator_x, receivers[2].plane.denominator_x,receivers[1].plane.denominator_x, receivers[0].plane.denominator_x),
+        .b = _mm_set_ps(receivers[3].plane.denominator_y, receivers[2].plane.denominator_y,receivers[1].plane.denominator_y, receivers[0].plane.denominator_y),
+        .c = _mm_set_ps(receivers[3].plane.denominator_constant, receivers[2].plane.denominator_constant,receivers[1].plane.denominator_constant, receivers[0].plane.denominator_constant),
+        .fallback_z = _mm_set_ps(receivers[3].plane.fallback_z, receivers[2].plane.fallback_z,receivers[1].plane.fallback_z, receivers[0].plane.fallback_z)
+    };
+
+    __m128 fx = _mm_set_ps(receivers[3].fx, receivers[2].fx, receivers[1].fx, receivers[0].fx);
+    __m128 fy = _mm_set_ps(receivers[3].fy, receivers[2].fy, receivers[1].fy, receivers[0].fy);
+    __m128 v00 = shadow_tap4(maps, receivers, &plane, valid, 0);
+    __m128 v10 = shadow_tap4(maps, receivers, &plane, valid, 1);
+    __m128 v01 = shadow_tap4(maps, receivers, &plane, valid, 2);
+    __m128 v11 = shadow_tap4(maps, receivers, &plane, valid, 3);
+    // blend receivers 
+    __m128 top = _mm_add_ps(v00, _mm_mul_ps(fx, _mm_sub_ps(v10, v00)));
+    __m128 bottom = _mm_add_ps(v01, _mm_mul_ps(fx, _mm_sub_ps(v11, v01)));
+
+    float filtered[4];
+    // pcf filter bilinear
+    _mm_storeu_ps(filtered, _mm_add_ps(top, _mm_mul_ps(fy, _mm_sub_ps(bottom, top))));
+    for (unsigned lane = 0; lane < 4; ++lane)
+        if (valid & (1u << lane)) visibility[lane] = filtered[lane];
+    #else
+        for (unsigned lane = 0; lane < 4; ++lane) {
+            visibility[lane] = (active & (1u << lane))
+                ? shadow_maps_visibility(maps, light_index, points[lane], normals[lane]) : 0.0f;
+        }
+    #endif
 }
