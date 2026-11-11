@@ -11,6 +11,17 @@
 #include <emmintrin.h>
 #endif
 
+/*shadow_maps_visibility()
+    prepare one receiver
+    sample four taps
+    blend visibility
+
+shadow_maps_visibility4()
+    prepare four receivers
+    sample four taps across SIMD lanes
+    blend four visibility values
+    */
+
 // A cubemap always has the six +/-X, +/-Y, +/-Z faces.
 enum { CUBE_FACE_COUNT=6 };
 
@@ -31,9 +42,39 @@ struct ShadowMaps {
     bool ready;
 };
 
+typedef struct {
+    float numerator;
+    float denominator_x;
+    float denominator_y;
+    float denominator_constant;
+    float fallback_z;
+} ShadowReceiverPlane;
+
+
 // Scalar arithmetic stays inside a tile/packet job, rather than becoming a job itself.
 static float dot(Vector3 a,Vector3 b) {return a.x*b.x+a.y*b.y+a.z*b.z;}
 static bool finite_vec(Vector3 v) {return isfinite(v.x)&&isfinite(v.y)&&isfinite(v.z);}
+
+static ShadowReceiverPlane shadow_receiver_plane(const CameraPixelBasis *basis,Vector3 delta,Vector3 normal,float receiver_z)
+{
+    float nr = dot(normal, basis->right);
+    float nu = dot(normal, basis->up);
+    float nf = dot(normal, basis->forward);
+    float inverse_focal = basis->inverse_focal;
+
+    return (ShadowReceiverPlane){
+        .numerator = dot(normal, delta),
+
+        .denominator_x = nr * inverse_focal,
+        .denominator_y = -nu * inverse_focal,
+
+        .denominator_constant = nf + nr * ((0.5f - basis->center_x) * inverse_focal) + nu * ((basis->center_y - 0.5f) * inverse_focal),
+        .fallback_z = receiver_z
+    };
+}
+
+
+
 
 ShadowMaps *shadow_maps_create(size_t capacity,int face_size,float near_clip)
 {
@@ -97,42 +138,24 @@ bool shadow_maps_build(ShadowMaps *maps,RenderScratch *scratch,
 // delta is the already biased light-to-receiver vector
 // x and y -> valid indices on face
 /* Copilot
+ Copilot
 
-The shadow_texel_visibility function calculates the visibility of a texel in shadow mapping by determining 
-the depth comparison between the stored depth value and the receiver's depth, taking into account the light-to-receiver vector and the surface normal. 
-It uses parameters  such as shadow maps, shadow cube data, and pixel coordinates to perform this computation,
-returning a float that indicates the visibility status.*/
-static float shadow_texel_visibility(
-    const ShadowMaps *maps,
-    const ShadowCube *cube,
-    size_t face,
-    int x,
-    int y,
-    Vector3 delta,
-    Vector3 normal,
-    float receiver_z)
+The shadow_texel_visibility function calculates the visibility of a texel in shadow mapping by comparing the stored depth value 
+at specified coordinates with a computed receiver depth based on the shadow receiver plane's parameters. 
+It returns a float indicating the visibility, where a value of 0.0f signifies full occlusion and 1.0f indicates full visibility.
+*/
+static float shadow_texel_visibility(const ShadowMaps *maps,const DepthBuffer *depth,const ShadowReceiverPlane *plane,int x,int y)
 {
+    float stored_q = depth->values[(size_t)y * depth->width + x];
 
-    const CameraPixelBasis *basis = &cube->basis[face];
-    const DepthBuffer *depth = &cube->depth[face];
+    if (stored_q <= 0.0f)
+        return 1.0f;
 
-    float stored_q = depth->values[(size_t)y * maps->face_size + x];
-
-    if (stored_q <= 0.0f) return 1.0f;
-
-    float px = (x + 0.5f - basis->center_x) * basis->inverse_focal;
-    float py = (basis->center_y - y - 0.5f) * basis->inverse_focal;
-
-    Vector3 direction = {
-        basis->right.x * px + basis->up.x * py + basis->forward.x,
-        basis->right.y * px + basis->up.y * py + basis->forward.y,
-        basis->right.z * px + basis->up.z * py + basis->forward.z
-    };
-
-    float denominator = dot(normal, direction);
+    float denominator = plane->denominator_x * (float)x + plane->denominator_y * (float)y + plane->denominator_constant;
+    float receiver_z = plane->fallback_z;
 
     if (fabsf(denominator) > 1e-6f) {
-        float plane_z = dot(normal, delta) / denominator;
+        float plane_z = plane->numerator / denominator;
 
         if (isfinite(plane_z) && plane_z >= maps->near_clip)
             receiver_z = plane_z;
@@ -354,13 +377,18 @@ float shadow_maps_visibility(const ShadowMaps *maps,size_t light_index,Vector3 p
     float fx = tx - (float)x0;
     float fy = ty - (float)y0;
     // we're doing this the scalar way, SIMD will need different methods
-    float v00 = shadow_texel_visibility( maps, cube, face, x0, y0, delta, normal, z);
-    float v10 = shadow_texel_visibility(maps, cube, face, x1, y0, delta, normal, z);
-    float v01 = shadow_texel_visibility(maps, cube, face, x0, y1, delta, normal, z);
-    float v11 = shadow_texel_visibility(maps, cube, face, x1, y1, delta, normal, z);
+    ShadowReceiverPlane plane =shadow_receiver_plane(basis, delta, normal, z);
 
+    const DepthBuffer *depth = &cube->depth[face];
+
+    float v00 = shadow_texel_visibility(maps, depth, &plane, x0, y0);
+    float v10 = shadow_texel_visibility(maps, depth, &plane, x1, y0);
+    float v01 = shadow_texel_visibility(maps, depth, &plane, x0, y1);
+    float v11 = shadow_texel_visibility(maps, depth, &plane, x1, y1);
+    
     float top = v00 + fx * (v10 - v00);
     float bottom = v01 + fx * (v11 - v01);
+
 
     return top + fy * (bottom - top);
 }
