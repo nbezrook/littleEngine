@@ -28,8 +28,16 @@ uint32_t raster_shade_pixel(const RasterScene *s,const PreparedTriangle *t,int x
     for(size_t i=0;i<s->lighting.light_count;++i) {
         const Light *light=&s->lighting.lights[i];LightSample sample;
         if(!lighting_sample_light(light,point,t->normal,&sample)) continue;
-        if(light->casts_shadows && s->maps && shadow_maps_occluded(s->maps,i,point,t->normal)) continue;
-        total.x+=sample.irradiance.x;total.y+=sample.irradiance.y;total.z+=sample.irradiance.z;
+        float visibility = 1.0f;
+        // visibility check
+        if (light->casts_shadows && s->maps) {
+            visibility = shadow_maps_visibility(
+                s->maps, i, point, t->normal);
+        }
+
+        total.x += sample.irradiance.x * visibility;
+        total.y += sample.irradiance.y * visibility;
+        total.z += sample.irradiance.z * visibility;
     }
     return lighting_apply_rgb(texel,total,s->lut);
 }
@@ -96,10 +104,15 @@ static __m128 bit_mask(unsigned bits)
     return _mm_castsi128_ps(_mm_set_epi32(bits&8?-1:0,bits&4?-1:0,bits&2?-1:0,bits&1?-1:0));
 }
 #endif
+/* Copilot
 
+The raster_shade_four function performs shading calculations for four pixels in a rasterized scene, 
+utilizing SIMD instructions for efficiency when available. 
+It computes the final color for each pixel based on lighting, texture, and geometry information, 
+and stores the results in the provided output array.*/
 void raster_shade_four(const RasterScene *s,const PreparedTriangle *t,int x,int y,const float q[4],uint32_t out[4])
 {
-#if RASTER_HAS_SIMD
+#if RASTER_HAS_SIMD // maybe update your cpu
     __m128 xs=_mm_set_ps(x+3.5f,x+2.5f,x+1.5f,x+.5f);
     __m128 z=_mm_div_ps(_mm_set1_ps(1),_mm_loadu_ps(q));
     __m128 vx=_mm_mul_ps(_mm_sub_ps(xs,_mm_set1_ps(s->basis.center_x)),_mm_set1_ps(s->basis.inverse_focal));
@@ -136,7 +149,14 @@ void raster_shade_four(const RasterScene *s,const PreparedTriangle *t,int x,int 
         __m128 strength=_mm_mul_ps(_mm_mul_ps(_mm_set1_ps(light->intensity),attenuation),cosine);
         active&=(unsigned)_mm_movemask_ps(_mm_cmpgt_ps(strength,_mm_setzero_ps()));
         if(!active) continue;
-        if(light->casts_shadows && s->maps) active&=~shadow_maps_occluded4(s->maps,i,points,normals,active);
+
+        // have shadows cast to lanes to allow for pcf through SIMD
+        if (light->casts_shadows && s->maps) {
+            float visibility[4];
+            shadow_maps_visibility4(s->maps, i, points, normals, active, visibility);
+            strength = _mm_mul_ps(strength, _mm_loadu_ps(visibility));
+        }
+        
         __m128 mask=bit_mask(active);
         total_x=_mm_add_ps(total_x,_mm_and_ps(mask,_mm_mul_ps(_mm_set1_ps(light->color.x),strength)));
         total_y=_mm_add_ps(total_y,_mm_and_ps(mask,_mm_mul_ps(_mm_set1_ps(light->color.y),strength)));

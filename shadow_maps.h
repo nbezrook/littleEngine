@@ -13,6 +13,19 @@ extern "C" {
 #endif
 
 
+/**
+ * returns light visibility, 0 blocked, 1 fully visible
+ * otherwise like shadow maps occlusion
+ */
+float shadow_maps_visibility(const ShadowMaps *maps,size_t light_index,Vector3 point,Vector3 normal);
+
+/**
+ *four visibility values for SIMD 
+ * lane that's inactive is 0
+ * points, normals and visibility each contain four elements
+ */
+void shadow_maps_visibility4(const ShadowMaps *maps,size_t light_index,const Vector3 points[4],const Vector3 normals[4],unsigned active_mask,float visibility[4]);
+
 /** Allocate renderer-owned storage for capacity*6 square float depth faces.
  * capacity is 1..SCENE_LIGHT_CAPACITY; face_size>=4; near_clip is positive metres.
  * Returns NULL on invalid settings, overflow or allocation failure. Destroy after

@@ -242,3 +242,21 @@ unsigned shadow_maps_occluded4(const ShadowMaps *maps,size_t index,const Vector3
     for(int lane=0;lane<4;++lane)if((active&(1u<<lane)) && shadow_maps_occluded(maps,index,points[lane],normals[lane]))result|=1u<<lane;
     return result;
 }
+
+
+float shadow_maps_visibility(const ShadowMaps *maps,size_t light_index,Vector3 point,Vector3 normal)
+{
+    return shadow_maps_occluded(
+        maps, light_index, point, normal) ? 0.0f : 1.0f;
+}
+
+void shadow_maps_visibility4(const ShadowMaps *maps,size_t light_index,const Vector3 points[4],const Vector3 normals[4],unsigned active_mask,float visibility[4])
+{
+    unsigned active = active_mask & 15u;
+    unsigned blocked = shadow_maps_occluded4(maps, light_index, points, normals, active);
+    for (unsigned lane = 0; lane < 4; ++lane) {
+        unsigned bit = 1u << lane;
+        visibility[lane] =
+            (active & bit) && !(blocked & bit) ? 1.0f : 0.0f;
+    }
+}
