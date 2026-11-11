@@ -16,11 +16,27 @@
 
 #include "render_config.h"
 
+
+// class for profiling rendering 
+typedef struct {
+    double shadow_ms;
+    double prepare_ms;
+    double tiles_ms;
+    double present_ms;
+
+    Uint64 window_start;
+    Uint64 frequency;
+    unsigned frames;
+} RenderProfile;
+
+
 typedef struct {
     SDL_Window *window;
     SDL_Renderer *sdl_renderer;
     SDL_Texture *screen_texture;
     bool video_initialized;
+
+    RenderProfile profile;
 
     RenderScratch scratch;
     LightingLUT lighting_lut;
@@ -29,6 +45,8 @@ typedef struct {
     //render workers do render jobs
     RenderWorkers *workers;
     RasterScene *prepared_scene;
+
+    bool debug;
 } EngineRenderer;
 
     #ifdef __cplusplus

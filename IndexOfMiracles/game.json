@@ -20,7 +20,7 @@
   "gravity": 9.81
   },
   "rendering": {
-  "shadow_face_size": 256,
+  "shadow_face_size": 512,
   "shadow_near_clip": 0.01
   }
 }
