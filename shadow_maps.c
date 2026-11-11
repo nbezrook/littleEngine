@@ -65,6 +65,33 @@ static bool finite_vec(Vector3 v) {return isfinite(v.x)&&isfinite(v.y)&&isfinite
 
 /* Copilot
 
+The shadow_receiver_plane function computes a ShadowReceiverPlane structure based on the provided camera pixel basis, 
+a delta vector, a normal vector, and a receiver depth value. 
+It calculates the numerator and denominators for the plane equation using dot products and the inverse focal length from the camera basis.*/
+static ShadowReceiverPlane shadow_receiver_plane(const CameraPixelBasis *basis,Vector3 delta,Vector3 normal,float receiver_z)
+{
+    float nr = dot(normal, basis->right);
+    float nu = dot(normal, basis->up);
+    float nf = dot(normal, basis->forward);
+    float inverse_focal = basis->inverse_focal;
+
+    return (ShadowReceiverPlane){
+        .numerator = dot(normal, delta),
+
+        .denominator_x = nr * inverse_focal,
+        .denominator_y = -nu * inverse_focal,
+
+        .denominator_constant = nf + nr * ((0.5f - basis->center_x) * inverse_focal) + nu * ((basis->center_y - 0.5f) * inverse_focal),
+        .fallback_z = receiver_z
+    };
+}
+
+
+
+
+
+/* Copilot
+
 The shadow_prepare_receiver function prepares a shadow receiver by calculating the projected coordinates
  and depth based on the provided light index, point, and normal vectors, while ensuring the validity of the input parameters and the shadow map's state. 
 It updates the ShadowReceiver structure with the computed values, including depth and texture coordinates
@@ -140,26 +167,6 @@ static bool shadow_prepare_receiver(const ShadowMaps *maps,size_t light_index,Ve
 
     return true;
 }
-
-
-static ShadowReceiverPlane shadow_receiver_plane(const CameraPixelBasis *basis,Vector3 delta,Vector3 normal,float receiver_z)
-{
-    float nr = dot(normal, basis->right);
-    float nu = dot(normal, basis->up);
-    float nf = dot(normal, basis->forward);
-    float inverse_focal = basis->inverse_focal;
-
-    return (ShadowReceiverPlane){
-        .numerator = dot(normal, delta),
-
-        .denominator_x = nr * inverse_focal,
-        .denominator_y = -nu * inverse_focal,
-
-        .denominator_constant = nf + nr * ((0.5f - basis->center_x) * inverse_focal) + nu * ((basis->center_y - 0.5f) * inverse_focal),
-        .fallback_z = receiver_z
-    };
-}
-
 
 
 
