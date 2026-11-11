@@ -100,10 +100,10 @@ bool engine_init(Engine *engine, int width, int height, const char *game_directo
     }
 
     if (!server_add_entity(&engine->server, (Entity){
-            .position = {-1.5f, 0.0f, 0.0f},
+            .position = {1.5f, 0.0f, 3.0f},
             .rotation_rate = {0.5f, 1.0f, 0.0f}
         }) || !server_add_entity(&engine->server, (Entity){
-            .position = {1.5f, 0.0f, 1.0f},
+            .position = {-1.5f, 0.0f, -3.0f},
             .rotation_rate = {0.0f, -0.7f, 0.3f}
         })) {
         debug_console_shutdown(&engine->console);

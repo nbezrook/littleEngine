@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "start_map": "maps/box_room_test.json",
+  "start_map": "maps/two_rooms_test.json",
   "simulation": {
     "tick_hz": 60
   },

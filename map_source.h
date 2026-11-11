@@ -4,6 +4,10 @@
 #include "math/map_types.h"
 #include "lighting_types.h"
 
+enum {
+    MAP_SOURCE_SOLID_CAPACITY = 8
+};
+
 typedef struct {
     Point2 metres_per_repeat;
     Point2 offset;
@@ -15,6 +19,12 @@ typedef struct {
     SurfaceMapping mapping;
 } SurfaceDefinition;
 
+
+typedef struct {
+    RoomBounds bounds;
+    SurfaceDefinition surface;
+} SolidBoxDefinition;
+
 typedef struct {
     RoomBounds bounds;
     Vector3 player_spawn;
@@ -22,25 +32,29 @@ typedef struct {
     SurfaceDefinition floor;
     SurfaceDefinition ceiling;
     SceneLighting lighting;
+    size_t solid_count;
+    SolidBoxDefinition solids[MAP_SOURCE_SOLID_CAPACITY];
 } BoxRoomDefinition;
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-/**
- * Load version-three JSON containing exactly one box room.
- * Startup/loading operation: file IO and temporary JSON allocations occur here.
- * Copies all values; no pointers into the document survive this call.
- * Rejects bad dimensions, spawn, numbers, and material-name lengths and mapping settings.
- * NULL/empty arguments are rejected; failure leaves *out unchanged.
- * Does not resolve textures or validate the player's body against the room.
- * Call on the loading/owning thread before publishing the result.
- */
-bool box_room_definition_load_json(BoxRoomDefinition *out, const char *path);
 
-bool map_compile_box_room(MapData *out,const BoxRoomDefinition *source);
 
-#ifdef __cplusplus
-}
-#endif
+    #ifdef __cplusplus
+    extern "C" {
+    #endif
+    /**
+     * Load version-three JSON containing exactly one box room.
+     * Startup/loading operation: file IO and temporary JSON allocations occur here.
+     * Copies all values; no pointers into the document survive this call.
+     * Rejects bad dimensions, spawn, numbers, and material-name lengths and mapping settings.
+     * NULL/empty arguments are rejected; failure leaves *out unchanged.
+     * Does not resolve textures or validate the player's body against the room.
+     * Call on the loading/owning thread before publishing the result.
+     */
+    bool box_room_definition_load_json(BoxRoomDefinition *out, const char *path);
+
+    bool map_compile_box_room(MapData *out,const BoxRoomDefinition *source);
+
+    #ifdef __cplusplus
+    }
+    #endif
 #endif

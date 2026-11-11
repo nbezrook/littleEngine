@@ -128,10 +128,43 @@ bool box_room_definition_load_json(BoxRoomDefinition *out, const char *path)
             throw std::runtime_error("Room extents must be positive and finite");
         if (spawn.x < lo.x || spawn.x > hi.x || spawn.y < lo.y || spawn.y > hi.y || spawn.z < lo.z || spawn.z > hi.z)
             throw std::runtime_error("Spawn point must be inside room bounds");
+    
+        if (document.contains("solids")) {
+            const auto &solids = document.at("solids");
+
+            if (!solids.is_array() || solids.size() > MAP_SOURCE_SOLID_CAPACITY) {
+                throw std::runtime_error("Too many solid boxes");
+            } // but i love solids
+
+            for (size_t i = 0; i < solids.size(); ++i) {
+                const auto &entry = solids.at(i);
+                SolidBoxDefinition &solid = result.solids[i];
+
+                solid.bounds.min = read_vector3(entry.at("min"));
+                solid.bounds.max = read_vector3(entry.at("max"));
+                solid.surface = read_surface(entry.at("surface"));
+
+                Vector3 a = solid.bounds.min;
+                Vector3 b = solid.bounds.max;
+
+                if (!(a.x < b.x && a.y < b.y && a.z < b.z) || !std::isfinite(b.x - a.x) || !std::isfinite(b.y - a.y) || !std::isfinite(b.z - a.z)) {
+                    throw std::runtime_error(
+                        "Solid extents must be positive and finite");
+                }
+
+                if (a.x < result.bounds.min.x ||a.y < result.bounds.min.y ||a.z < result.bounds.min.z ||b.x > result.bounds.max.x ||b.y > result.bounds.max.y ||b.z > result.bounds.max.z) {
+                    throw std::runtime_error(
+                        "Solid box must be inside the shell");
+                }
+            }
+            result.solid_count = solids.size();
+        }
 
         *out = result;
         return true;
-    } catch (const std::exception &error) {
+    }
+
+    catch (const std::exception &error) {
         SDL_Log("Map source '%s': %s", path, error.what());
         return false;
     }
