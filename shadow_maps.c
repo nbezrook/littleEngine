@@ -33,10 +33,22 @@ typedef struct {
     bool enabled;
 } ShadowCube;
 
+typedef struct {
+    size_t light;
+    size_t face;
+} ShadowFaceJob;
+
+
 struct ShadowMaps {
     float *storage;
     ShadowCube cubes[SCENE_LIGHT_CAPACITY];
     size_t capacity,light_count;
+
+    // delegate shadow work to jobs for workers to pick up
+    ShadowFaceJob jobs[SCENE_LIGHT_CAPACITY * CUBE_FACE_COUNT];
+    size_t job_count;
+    bool building;
+
     int face_size;
     float near_clip,bias,focal;
     bool ready;
@@ -276,6 +288,8 @@ void shadow_maps_destroy(ShadowMaps *maps)
     // Free the backing allocation once; individual faces only borrow it.
     free(maps->storage);free(maps);
 }
+
+/* OLD IMPLEMENTATION
 bool shadow_maps_build(ShadowMaps *maps,RenderScratch *scratch,
     const SceneObject *objects,size_t object_count,const SceneLighting *lighting)
 {
@@ -307,6 +321,95 @@ bool shadow_maps_build(ShadowMaps *maps,RenderScratch *scratch,
     maps->ready=true;
     return true;
 }
+*/
+
+
+
+bool shadow_maps_begin_build(ShadowMaps *maps, const SceneLighting *lighting)
+{
+    if (!maps) return false;
+    maps->ready = false;
+    maps->building = false;
+    maps->job_count = 0;
+    if (!lighting_validate(lighting) || lighting->light_count > maps->capacity)
+        return false;
+    for (size_t i = 0; i < lighting->light_count; ++i)
+        if (lighting->lights[i].casts_shadows && lighting->lights[i].type != LIGHT_POINT)
+            return false;
+
+    maps->light_count = lighting->light_count;
+    maps->bias = lighting->shadow_bias;
+    for (size_t i = 0; i < lighting->light_count; ++i) {
+        const Light *light = &lighting->lights[i];
+        ShadowCube *cube = &maps->cubes[i];
+        cube->enabled = light->casts_shadows;
+        if (!cube->enabled) continue;
+        cube->position = light->position;
+        cube->radius = light->radius;
+        for (size_t face = 0; face < CUBE_FACE_COUNT; ++face)
+            maps->jobs[maps->job_count++] = (ShadowFaceJob){i, face};
+    }
+    maps->building = true;
+    return true;
+}
+
+size_t shadow_maps_job_count(const ShadowMaps *maps)
+{
+    return maps && maps->building ? maps->job_count : 0;
+}
+
+bool shadow_maps_render_job(ShadowMaps *maps, size_t job, RenderScratch *scratch,const SceneObject *objects, size_t object_count)
+{
+    if (!maps || !maps->building || !scratch || job >= maps->job_count || (object_count && !objects)) return false;
+    ShadowFaceJob entry = maps->jobs[job];
+    ShadowCube *cube = &maps->cubes[entry.light];
+    const float pi = 3.14159265358979323846f;
+    const float yaw[CUBE_FACE_COUNT] = {pi*.5f, -pi*.5f, 0, 0, 0, pi};
+    const float pitch[CUBE_FACE_COUNT] = {0, 0, pi*.5f, -pi*.5f, 0, 0};
+    Camera view = {
+        cube->position, yaw[entry.face], pitch[entry.face],
+        maps->focal, maps->near_clip
+    };
+    return camera_build_pixel_basis(&cube->basis[entry.face], &view,maps->face_size, maps->face_size) 
+    && rasterizer_draw_depth_scene(&cube->depth[entry.face], scratch,objects, object_count, &view);
+}
+
+
+bool shadow_maps_finish_build(ShadowMaps *maps, bool succeeded)
+{
+    if (!maps || !maps->building) return false;
+    maps->building = false;
+    maps->ready = succeeded;
+    return succeeded;
+}
+
+
+
+
+
+// serial shadow map builder
+/* Copilot
+
+The shadow_maps_build function is responsible for constructing shadow maps by initiating the build process, 
+rendering jobs for each object in the scene, and finalizing the build, returning a boolean indicating success or failure. 
+It takes parameters for shadow maps, rendering scratch data, an array of scene objects, 
+the count of those objects, and scene lighting information.*/
+bool shadow_maps_build(ShadowMaps *maps, RenderScratch *scratch,const SceneObject *objects, size_t object_count,const SceneLighting *lighting)
+{
+    if (!shadow_maps_begin_build(maps, lighting)) return false;
+    bool succeeded = scratch && (!object_count || objects);
+    if (succeeded)
+        for (size_t job = 0; job < shadow_maps_job_count(maps); ++job)
+            if (!shadow_maps_render_job(maps, job, scratch, objects, object_count)) {
+                succeeded = false;
+                break;
+            }
+    return shadow_maps_finish_build(maps, succeeded);
+}
+
+
+
+
 
 // delta is the already biased light-to-receiver vector
 // x and y -> valid indices on face

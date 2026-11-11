@@ -1,5 +1,6 @@
 #include "renderer.h"
 #include "rasterizer.h"
+#include <stdlib.h>
 
 bool renderer_init(EngineRenderer *renderer, const char *title, int width, int height, const RenderConfig *config)
 {
@@ -39,6 +40,20 @@ bool renderer_init(EngineRenderer *renderer, const char *title, int width, int h
         goto fail;
     }
 
+    // let render workers work on scratch memory for shadows
+    renderer->shadow_scratch_count =
+        render_workers_count(renderer->workers);
+
+    renderer->shadow_scratch = calloc(
+        renderer->shadow_scratch_count,
+        sizeof(*renderer->shadow_scratch));
+
+    if (!renderer->shadow_scratch) {
+        SDL_SetError("Shadow-worker scratch allocation failed.");
+        goto fail;
+    }
+
+
     renderer->window = SDL_CreateWindow(title, width, height, 0);
     if (!renderer->window) goto fail;
     renderer->sdl_renderer = SDL_CreateRenderer(renderer->window, NULL);
@@ -63,6 +78,10 @@ void renderer_shutdown(EngineRenderer *renderer)
     if (!renderer) return;
 
     render_workers_destroy(renderer->workers);
+    free(renderer->shadow_scratch);
+    renderer->shadow_scratch = NULL;
+    renderer->shadow_scratch_count = 0;
+
     raster_scene_destroy(renderer->prepared_scene);
 
     if (renderer->screen_texture) SDL_DestroyTexture(renderer->screen_texture);
@@ -125,6 +144,31 @@ static void render_profile_record(RenderProfile *profile,const Uint64 times[5])
     profile->frames = 0;
 }
 
+// class defining shadow work to delegate to workers
+typedef struct {
+    ShadowMaps *maps;
+
+    RenderScratch *scratch;
+    size_t scratch_count;
+
+    const SceneObject *objects;
+    size_t object_count;
+} ShadowWork;
+
+// create job to delegate to workers
+//worker receives its own scratch buffer, regardless of which face job it gets
+// unit translates job_index into a light and face no cubemap needed
+static bool render_shadow_job(void *data,size_t job_index,size_t worker_index)
+{
+    ShadowWork *work = data;
+
+    if (worker_index >= work->scratch_count)
+        return false;
+
+    return shadow_maps_render_job(work->maps,job_index,&work->scratch[worker_index],work->objects,work->object_count);
+}
+
+
 
 
 
@@ -142,10 +186,38 @@ void render_frame(EngineRenderer *renderer, const SceneObject *objects,
         times[0] = SDL_GetPerformanceCounter();
     }
 
-    if (!shadow_maps_build(renderer->shadow_maps,&renderer->scratch,objects,object_count,lighting)) {
-        SDL_Log("Shadow-map build failed: invalid input, light budget, or unsupported shadowed light type.");
+
+
+
+    if (!shadow_maps_begin_build(renderer->shadow_maps, lighting)) {
+        SDL_Log("Shadow-map preparation failed.");
         return;
     }
+
+    // form shadow work for jobs to send to workers
+    ShadowWork shadow_work = {
+        .maps = renderer->shadow_maps,
+        .scratch = renderer->shadow_scratch,
+        .scratch_count = renderer->shadow_scratch_count,
+        .objects = objects,
+        .object_count = object_count
+    };
+
+    bool shadows_succeeded = render_workers_run(
+        renderer->workers,
+        shadow_maps_job_count(renderer->shadow_maps),
+        render_shadow_job,
+        &shadow_work);
+
+    if (!shadow_maps_finish_build(
+            renderer->shadow_maps, shadows_succeeded)) {
+        SDL_Log("Shadow-map rendering failed.");
+        return;
+    }
+
+
+
+
 
     if (renderer->debug) {
         times[1] = SDL_GetPerformanceCounter();

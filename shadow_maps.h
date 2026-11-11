@@ -13,6 +13,31 @@ extern "C" {
 #endif
 
 
+
+// RENDER JOBS
+/*
+ * Owner thread only, with no active jobs or queries.
+ * Invalidates previous maps and prepares face jobs.
+ * Copies the light data needed by jobs. No allocation.
+ */
+bool shadow_maps_begin_build(ShadowMaps *maps,const SceneLighting *lighting);
+size_t shadow_maps_job_count(const ShadowMaps *maps);
+
+/*
+ * Execute each job exactly once after successful begin_build.
+ * Concurrent jobs require distinct indices and exclusive scratch.
+ * Geometry remains immutable and alive until every job finishes.
+ */
+bool shadow_maps_render_job(ShadowMaps *maps,size_t job,RenderScratch *scratch,const SceneObject *objects,size_t object_count);
+
+/*
+ * Owner thread only, after all dispatched jobs have finished.
+ * Pass true only if every required job completed successfully.
+ * Failed builds remain unavailable to queries.
+ */
+bool shadow_maps_finish_build(ShadowMaps *maps,bool succeeded);
+
+
 /**
  * returns light visibility, 0 blocked, 1 fully visible
  * otherwise like shadow maps occlusion

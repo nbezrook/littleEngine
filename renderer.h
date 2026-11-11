@@ -38,7 +38,12 @@ typedef struct {
 
     RenderProfile profile;
 
+    // serial
     RenderScratch scratch;
+    // parallel
+    RenderScratch *shadow_scratch;
+    size_t shadow_scratch_count;
+
     LightingLUT lighting_lut;
     ShadowMaps *shadow_maps; // renderer handles persistent depth cubemaps
     FrameBuffer framebuffer;
