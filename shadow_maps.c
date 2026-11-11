@@ -41,7 +41,7 @@ struct ShadowMaps {
     float near_clip,bias,focal;
     bool ready;
 };
-
+//encapsulates parameters related to shadow reception
 typedef struct {
     float numerator;
     float denominator_x;
@@ -50,10 +50,97 @@ typedef struct {
     float fallback_z;
 } ShadowReceiverPlane;
 
+typedef struct {
+    const DepthBuffer *depth; // shadow face
+    ShadowReceiverPlane plane;
+    int x0, x1;
+    int y0, y1;
+    float fx, fy;
+} ShadowReceiver;
+
 
 // Scalar arithmetic stays inside a tile/packet job, rather than becoming a job itself.
 static float dot(Vector3 a,Vector3 b) {return a.x*b.x+a.y*b.y+a.z*b.z;}
 static bool finite_vec(Vector3 v) {return isfinite(v.x)&&isfinite(v.y)&&isfinite(v.z);}
+
+/* Copilot
+
+The shadow_prepare_receiver function prepares a shadow receiver by calculating the projected coordinates
+ and depth based on the provided light index, point, and normal vectors, while ensuring the validity of the input parameters and the shadow map's state. 
+It updates the ShadowReceiver structure with the computed values, including depth and texture coordinates
+returns a boolean indicating success or failure.*/
+static bool shadow_prepare_receiver(const ShadowMaps *maps,size_t light_index,Vector3 point,Vector3 normal,ShadowReceiver *out)
+{
+    // mess of awful code i know
+    if(!maps || !maps->ready || light_index>=maps->light_count || !finite_vec(point) || !finite_vec(normal)) return false;
+
+    const ShadowCube *cube=&maps->cubes[light_index];
+
+    if(!cube->enabled) return false;
+
+    Vector3 delta={point.x-cube->position.x,point.y-cube->position.y,point.z-cube->position.z};
+    double distance2=(double)delta.x*delta.x+(double)delta.y*delta.y+(double)delta.z*delta.z;
+
+    if(distance2>=(double)cube->radius*cube->radius) return false;
+
+    delta.x+=normal.x*maps->bias; delta.y+=normal.y*maps->bias; delta.z+=normal.z*maps->bias;
+    float ax=fabsf(delta.x),ay=fabsf(delta.y),az=fabsf(delta.z);
+    size_t face;
+
+    if(ax>=ay && ax>=az) face=delta.x>=0 ? 0 : 1;
+    else if(ay>=az) face=delta.y>=0 ? 2 : 3;
+    else face=delta.z>=0 ? 4 : 5;
+
+    const CameraPixelBasis *basis=&cube->basis[face];
+
+    float z=dot(delta,basis->forward);
+
+    if(!isfinite(z) || z<maps->near_clip) return false;
+    float inverse_z=1.0f/z;
+    float sx=basis->center_x+maps->focal*dot(delta,basis->right)*inverse_z;
+    float sy=basis->center_y-maps->focal*dot(delta,basis->up)*inverse_z;
+    if(!isfinite(sx) || !isfinite(sy)) return false;
+
+    // projection uses pixel-edge coordinates
+    // subtract 0.5 so integer coordinates identify texel center
+    float tx = sx - 0.5f;
+    float ty = sy - 0.5f;
+
+    float maximum = (float)(maps->face_size - 1);
+
+    tx = fmaxf(0.0f, fminf(tx, maximum));
+    ty = fmaxf(0.0f, fminf(ty, maximum));
+
+    int x0 = (int)floorf(tx);
+    int y0 = (int)floorf(ty);
+
+    int x1 = x0 + 1;
+    int y1 = y0 + 1;
+
+    if (x1 >= maps->face_size)
+        x1 = maps->face_size - 1;
+
+    if (y1 >= maps->face_size)
+        y1 = maps->face_size - 1;
+
+    float fx = tx - (float)x0;
+    float fy = ty - (float)y0;
+
+    // add to shadow receiver class
+    *out = (ShadowReceiver){
+        .depth = &cube->depth[face],
+        .plane = shadow_receiver_plane(basis, delta, normal, z),
+        .x0 = x0,
+        .x1 = x1,
+        .y0 = y0,
+        .y1 = y1,
+        .fx = fx,
+        .fy = fy
+    };
+
+    return true;
+}
+
 
 static ShadowReceiverPlane shadow_receiver_plane(const CameraPixelBasis *basis,Vector3 delta,Vector3 normal,float receiver_z)
 {
@@ -322,75 +409,23 @@ unsigned shadow_maps_occluded4(const ShadowMaps *maps,size_t index,const Vector3
 
 float shadow_maps_visibility(const ShadowMaps *maps,size_t light_index,Vector3 point,Vector3 normal)
 {
-    // mess of awful code i know
-    if(!maps || !maps->ready || light_index>=maps->light_count || !finite_vec(point) || !finite_vec(normal)) return 1.0f;
+    // take from encapsulated receiver
+    ShadowReceiver receiver;
 
-    const ShadowCube *cube=&maps->cubes[light_index];
+    if (!shadow_prepare_receiver(maps, light_index, point, normal, &receiver))return 1.0f;
 
-    if(!cube->enabled) return 1.0f;
+    const ShadowReceiver *r = &receiver;
 
-    Vector3 delta={point.x-cube->position.x,point.y-cube->position.y,point.z-cube->position.z};
-    double distance2=(double)delta.x*delta.x+(double)delta.y*delta.y+(double)delta.z*delta.z;
+    // scalar approach
+    float v00 = shadow_texel_visibility(maps, r->depth, &r->plane, r->x0, r->y0);
+    float v10 = shadow_texel_visibility(maps, r->depth, &r->plane, r->x1, r->y0);
+    float v01 = shadow_texel_visibility(maps, r->depth, &r->plane, r->x0, r->y1);
+    float v11 = shadow_texel_visibility(maps, r->depth, &r->plane, r->x1, r->y1);
 
-    if(distance2>=(double)cube->radius*cube->radius) return 1.0f;
+    float top = v00 + r->fx * (v10 - v00);
+    float bottom = v01 + r->fx * (v11 - v01);
 
-    delta.x+=normal.x*maps->bias; delta.y+=normal.y*maps->bias; delta.z+=normal.z*maps->bias;
-    float ax=fabsf(delta.x),ay=fabsf(delta.y),az=fabsf(delta.z);
-    size_t face;
-
-    if(ax>=ay && ax>=az) face=delta.x>=0 ? 0 : 1;
-    else if(ay>=az) face=delta.y>=0 ? 2 : 3;
-    else face=delta.z>=0 ? 4 : 5;
-
-    const CameraPixelBasis *basis=&cube->basis[face];
-
-    float z=dot(delta,basis->forward);
-
-    if(!isfinite(z) || z<maps->near_clip) return 1.0f;
-    float inverse_z=1.0f/z;
-    float sx=basis->center_x+maps->focal*dot(delta,basis->right)*inverse_z;
-    float sy=basis->center_y-maps->focal*dot(delta,basis->up)*inverse_z;
-    if(!isfinite(sx) || !isfinite(sy)) return 1.0f;
-
-    // projection uses pixel-edge coordinates
-    // subtract 0.5 so integer coordinates identify texel center
-    float tx = sx - 0.5f;
-    float ty = sy - 0.5f;
-
-    float maximum = (float)(maps->face_size - 1);
-
-    tx = fmaxf(0.0f, fminf(tx, maximum));
-    ty = fmaxf(0.0f, fminf(ty, maximum));
-
-    int x0 = (int)floorf(tx);
-    int y0 = (int)floorf(ty);
-
-    int x1 = x0 + 1;
-    int y1 = y0 + 1;
-
-    if (x1 >= maps->face_size)
-        x1 = maps->face_size - 1;
-
-    if (y1 >= maps->face_size)
-        y1 = maps->face_size - 1;
-
-    float fx = tx - (float)x0;
-    float fy = ty - (float)y0;
-    // we're doing this the scalar way, SIMD will need different methods
-    ShadowReceiverPlane plane =shadow_receiver_plane(basis, delta, normal, z);
-
-    const DepthBuffer *depth = &cube->depth[face];
-
-    float v00 = shadow_texel_visibility(maps, depth, &plane, x0, y0);
-    float v10 = shadow_texel_visibility(maps, depth, &plane, x1, y0);
-    float v01 = shadow_texel_visibility(maps, depth, &plane, x0, y1);
-    float v11 = shadow_texel_visibility(maps, depth, &plane, x1, y1);
-    
-    float top = v00 + fx * (v10 - v00);
-    float bottom = v01 + fx * (v11 - v01);
-
-
-    return top + fy * (bottom - top);
+    return top + r->fy * (bottom - top);
 }
 
 
