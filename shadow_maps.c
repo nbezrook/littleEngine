@@ -94,6 +94,59 @@ bool shadow_maps_build(ShadowMaps *maps,RenderScratch *scratch,
     return true;
 }
 
+// delta is the already biased light-to-receiver vector
+// x and y -> valid indices on face
+/* Copilot
+
+The shadow_texel_visibility function calculates the visibility of a texel in shadow mapping by determining 
+the depth comparison between the stored depth value and the receiver's depth, taking into account the light-to-receiver vector and the surface normal. 
+It uses parameters  such as shadow maps, shadow cube data, and pixel coordinates to perform this computation,
+returning a float that indicates the visibility status.*/
+static float shadow_texel_visibility(
+    const ShadowMaps *maps,
+    const ShadowCube *cube,
+    size_t face,
+    int x,
+    int y,
+    Vector3 delta,
+    Vector3 normal,
+    float receiver_z)
+{
+
+    const CameraPixelBasis *basis = &cube->basis[face];
+    const DepthBuffer *depth = &cube->depth[face];
+
+    float stored_q = depth->values[(size_t)y * maps->face_size + x];
+
+    if (stored_q <= 0.0f) return 1.0f;
+
+    float px = (x + 0.5f - basis->center_x) * basis->inverse_focal;
+    float py = (basis->center_y - y - 0.5f) * basis->inverse_focal;
+
+    Vector3 direction = {
+        basis->right.x * px + basis->up.x * py + basis->forward.x,
+        basis->right.y * px + basis->up.y * py + basis->forward.y,
+        basis->right.z * px + basis->up.z * py + basis->forward.z
+    };
+
+    float denominator = dot(normal, direction);
+
+    if (fabsf(denominator) > 1e-6f) {
+        float plane_z = dot(normal, delta) / denominator;
+
+        if (isfinite(plane_z) && plane_z >= maps->near_clip)
+            receiver_z = plane_z;
+    }
+
+    float comparison_z = receiver_z - maps->bias;
+
+    if (comparison_z < maps->near_clip)
+        comparison_z = maps->near_clip;
+
+    return stored_q * comparison_z > 1.0f ? 0.0f : 1.0f;
+}
+
+
 bool shadow_maps_occluded(const ShadowMaps *maps,size_t light_index,Vector3 point,Vector3 normal)
 {
     // mess of awful code i know
@@ -246,17 +299,90 @@ unsigned shadow_maps_occluded4(const ShadowMaps *maps,size_t index,const Vector3
 
 float shadow_maps_visibility(const ShadowMaps *maps,size_t light_index,Vector3 point,Vector3 normal)
 {
-    return shadow_maps_occluded(
-        maps, light_index, point, normal) ? 0.0f : 1.0f;
+    // mess of awful code i know
+    if(!maps || !maps->ready || light_index>=maps->light_count || !finite_vec(point) || !finite_vec(normal)) return 1.0f;
+
+    const ShadowCube *cube=&maps->cubes[light_index];
+
+    if(!cube->enabled) return 1.0f;
+
+    Vector3 delta={point.x-cube->position.x,point.y-cube->position.y,point.z-cube->position.z};
+    double distance2=(double)delta.x*delta.x+(double)delta.y*delta.y+(double)delta.z*delta.z;
+
+    if(distance2>=(double)cube->radius*cube->radius) return 1.0f;
+
+    delta.x+=normal.x*maps->bias; delta.y+=normal.y*maps->bias; delta.z+=normal.z*maps->bias;
+    float ax=fabsf(delta.x),ay=fabsf(delta.y),az=fabsf(delta.z);
+    size_t face;
+
+    if(ax>=ay && ax>=az) face=delta.x>=0 ? 0 : 1;
+    else if(ay>=az) face=delta.y>=0 ? 2 : 3;
+    else face=delta.z>=0 ? 4 : 5;
+
+    const CameraPixelBasis *basis=&cube->basis[face];
+
+    float z=dot(delta,basis->forward);
+
+    if(!isfinite(z) || z<maps->near_clip) return 1.0f;
+    float inverse_z=1.0f/z;
+    float sx=basis->center_x+maps->focal*dot(delta,basis->right)*inverse_z;
+    float sy=basis->center_y-maps->focal*dot(delta,basis->up)*inverse_z;
+    if(!isfinite(sx) || !isfinite(sy)) return 1.0f;
+
+    // projection uses pixel-edge coordinates
+    // subtract 0.5 so integer coordinates identify texel center
+    float tx = sx - 0.5f;
+    float ty = sy - 0.5f;
+
+    float maximum = (float)(maps->face_size - 1);
+
+    tx = fmaxf(0.0f, fminf(tx, maximum));
+    ty = fmaxf(0.0f, fminf(ty, maximum));
+
+    int x0 = (int)floorf(tx);
+    int y0 = (int)floorf(ty);
+
+    int x1 = x0 + 1;
+    int y1 = y0 + 1;
+
+    if (x1 >= maps->face_size)
+        x1 = maps->face_size - 1;
+
+    if (y1 >= maps->face_size)
+        y1 = maps->face_size - 1;
+
+    float fx = tx - (float)x0;
+    float fy = ty - (float)y0;
+    // we're doing this the scalar way, SIMD will need different methods
+    float v00 = shadow_texel_visibility( maps, cube, face, x0, y0, delta, normal, z);
+    float v10 = shadow_texel_visibility(maps, cube, face, x1, y0, delta, normal, z);
+    float v01 = shadow_texel_visibility(maps, cube, face, x0, y1, delta, normal, z);
+    float v11 = shadow_texel_visibility(maps, cube, face, x1, y1, delta, normal, z);
+
+    float top = v00 + fx * (v10 - v00);
+    float bottom = v01 + fx * (v11 - v01);
+
+    return top + fy * (bottom - top);
 }
+
+
+
+
+
+
+
+
+
 
 void shadow_maps_visibility4(const ShadowMaps *maps,size_t light_index,const Vector3 points[4],const Vector3 normals[4],unsigned active_mask,float visibility[4])
 {
     unsigned active = active_mask & 15u;
-    unsigned blocked = shadow_maps_occluded4(maps, light_index, points, normals, active);
+
     for (unsigned lane = 0; lane < 4; ++lane) {
-        unsigned bit = 1u << lane;
-        visibility[lane] =
-            (active & bit) && !(blocked & bit) ? 1.0f : 0.0f;
+        visibility[lane] = 0.0f;
+
+        if (active & (1u << lane)) {
+            visibility[lane] = shadow_maps_visibility(maps,light_index,points[lane],normals[lane]);
+        }
     }
 }
