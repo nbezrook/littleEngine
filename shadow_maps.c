@@ -74,6 +74,34 @@ static __m128 shadow_select(__m128 mask, __m128 yes, __m128 no)
 {
     return _mm_or_ps(_mm_and_ps(mask, yes), _mm_andnot_ps(mask, no));
 }
+
+#if defined(__SSE2__) && !defined(RASTER_FORCE_SCALAR)
+/* Copilot
+
+The gather_component function retrieves the specified component (x, y, or z) from an array of four Vector3 structures 
+based on the given axis index, and returns the components as a SIMD vector of type __m128. 
+It uses conditional expressions to select the appropriate component for each vector in the array before loading them into the SIMD register.*/
+static __m128 gather_component(const Vector3 v[4],int axis)
+{
+    float a[4];for(int i=0;i<4;++i)a[i]=axis==0?v[i].x:axis==1?v[i].y:v[i].z;
+    return _mm_loadu_ps(a);
+}
+// should speak for itself
+static __m128 vector_dot(__m128 x,__m128 y,__m128 z,Vector3 axis)
+{
+    return _mm_add_ps(_mm_add_ps(_mm_mul_ps(x,_mm_set1_ps(axis.x)),_mm_mul_ps(y,_mm_set1_ps(axis.y))),_mm_mul_ps(z,_mm_set1_ps(axis.z)));
+}
+/* Copilot
+
+The packet_finite function is a static function that takes a single __m128 vector as input and returns a __m128 vector. 
+It checks if the elements of the input vector are finite by comparing them to positive infinity and returns a mask indicating which elements are finite.
+*/
+static __m128 packet_finite(__m128 v)
+{
+    return _mm_cmple_ps(_mm_andnot_ps(_mm_set1_ps(-0.0f),v),_mm_set1_ps(FLT_MAX));
+}
+#endif
+
 /* Copilot
 
 computes shadow values for four shadow receivers based on their respective coordinates and depth values, utilizing SIMD operations for performance. 
@@ -371,32 +399,7 @@ bool shadow_maps_occluded(const ShadowMaps *maps,size_t light_index,Vector3 poin
     return stored_q*comparison_z>1.0f;
 }
 
-#if defined(__SSE2__) && !defined(RASTER_FORCE_SCALAR)
-/* Copilot
 
-The gather_component function retrieves the specified component (x, y, or z) from an array of four Vector3 structures 
-based on the given axis index, and returns the components as a SIMD vector of type __m128. 
-It uses conditional expressions to select the appropriate component for each vector in the array before loading them into the SIMD register.*/
-static __m128 gather_component(const Vector3 v[4],int axis)
-{
-    float a[4];for(int i=0;i<4;++i)a[i]=axis==0?v[i].x:axis==1?v[i].y:v[i].z;
-    return _mm_loadu_ps(a);
-}
-// should speak for itself
-static __m128 vector_dot(__m128 x,__m128 y,__m128 z,Vector3 axis)
-{
-    return _mm_add_ps(_mm_add_ps(_mm_mul_ps(x,_mm_set1_ps(axis.x)),_mm_mul_ps(y,_mm_set1_ps(axis.y))),_mm_mul_ps(z,_mm_set1_ps(axis.z)));
-}
-/* Copilot
-
-The packet_finite function is a static function that takes a single __m128 vector as input and returns a __m128 vector. 
-It checks if the elements of the input vector are finite by comparing them to positive infinity and returns a mask indicating which elements are finite.
-*/
-static __m128 packet_finite(__m128 v)
-{
-    return _mm_cmple_ps(_mm_andnot_ps(_mm_set1_ps(-0.0f),v),_mm_set1_ps(FLT_MAX));
-}
-#endif
 /* Copilot
 
 The shadow_maps_occluded4 function determines which of the four specified points are occluded by shadows in a given shadow map, 
